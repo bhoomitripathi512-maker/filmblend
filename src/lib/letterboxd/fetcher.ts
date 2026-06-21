@@ -4,6 +4,30 @@ import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types
 
 const BASE_URL = "https://letterboxd.com";
 
+async function ensureHeaderGeneratorData(): Promise<void> {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+
+  const targetDir = path.join(
+    process.cwd(),
+    "node_modules/header-generator/data_files",
+  );
+  const sourceDir = path.join(
+    process.cwd(),
+    "src/vendor/header-generator/data_files",
+  );
+
+  if (
+    fs.existsSync(path.join(targetDir, "headers-order.json")) ||
+    !fs.existsSync(sourceDir)
+  ) {
+    return;
+  }
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.cpSync(sourceDir, targetDir, { recursive: true });
+}
+
 const BROWSER_HEADERS = {
   "user-agent":
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -16,6 +40,7 @@ const BROWSER_HEADERS = {
 
 async function fetchHtml(path: string): Promise<string> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
+  await ensureHeaderGeneratorData();
   const { gotScraping } = await import("got-scraping");
 
   try {
@@ -361,6 +386,7 @@ export async function syncLetterboxdUser(username: string) {
         genreStats: [],
         directorStats: [],
         syncedAt: new Date().toISOString(),
+        syncMode: "rss" as const,
       };
     } catch (rssError) {
       if (htmlError instanceof LetterboxdError) throw htmlError;
@@ -394,5 +420,6 @@ async function syncLetterboxdUserFromHtml(username: string) {
     genreStats,
     directorStats,
     syncedAt: new Date().toISOString(),
+    syncMode: "html" as const,
   };
 }

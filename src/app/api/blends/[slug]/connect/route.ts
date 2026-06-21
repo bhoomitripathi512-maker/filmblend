@@ -121,6 +121,7 @@ export async function POST(
       watchlistCount: synced.filmsWatchlist.length,
       ratedCount: synced.filmsRated.length,
       syncedAt: synced.syncedAt,
+      syncMode: synced.syncMode,
     },
   });
 }
