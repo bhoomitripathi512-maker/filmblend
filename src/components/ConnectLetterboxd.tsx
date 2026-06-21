@@ -22,8 +22,8 @@ export function ConnectLetterboxd({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(Boolean(existingUsername));
 
-  async function handleConnect(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleConnect(e?: React.FormEvent) {
+    e?.preventDefault();
     setLoading(true);
     setError(null);
 
@@ -50,10 +50,18 @@ export function ConnectLetterboxd({
 
   if (success) {
     return (
-      <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-5">
-        <p className="text-sm font-medium text-emerald-300">{label}</p>
-        <p className="mt-1 text-lg font-semibold text-white">@{username}</p>
-        <p className="mt-2 text-sm text-emerald-200/80">Connected and synced</p>
+      <div className="rounded-xl border border-lb-green/40 bg-lb-carbon p-5">
+        <p className="text-sm font-medium text-lb-green">{label}</p>
+        <p className="mt-1 text-lg font-semibold text-lb-white">@{username}</p>
+        <p className="mt-2 text-sm text-lb-fog">Connected and synced</p>
+        <button
+          type="button"
+          onClick={() => handleConnect()}
+          disabled={loading}
+          className="mt-4 text-sm text-lb-green underline-offset-2 hover:underline disabled:opacity-50"
+        >
+          {loading ? "Re-syncing…" : "Re-sync Letterboxd"}
+        </button>
       </div>
     );
   }
@@ -61,10 +69,10 @@ export function ConnectLetterboxd({
   return (
     <form
       onSubmit={handleConnect}
-      className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur"
+      className="rounded-xl border border-lb-graphite bg-lb-carbon p-5"
     >
-      <p className="text-sm font-medium text-zinc-300">{label}</p>
-      <p className="mt-1 text-xs text-zinc-500">
+      <p className="text-sm font-medium text-lb-pewter">{label}</p>
+      <p className="mt-1 text-xs text-lb-fog">
         Enter your public Letterboxd username. Your watchlist and watched films
         must be public.
       </p>
@@ -74,14 +82,14 @@ export function ConnectLetterboxd({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="letterboxd username"
-          className="flex-1 rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-white placeholder:text-zinc-600 focus:border-orange-400 focus:outline-none"
+          className="flex-1 rounded-lg border border-lb-graphite bg-lb-void px-4 py-3 text-lb-white placeholder:text-lb-graphite focus:border-lb-green focus:outline-none"
           required
           disabled={loading}
         />
         <button
           type="submit"
           disabled={loading || !username.trim()}
-          className="rounded-xl bg-orange-500 px-5 py-3 font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-lb-green px-5 py-3 font-semibold text-lb-void transition hover:bg-lb-green-dim disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Syncing…" : "Connect"}
         </button>

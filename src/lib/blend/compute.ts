@@ -1,27 +1,23 @@
 import { buildRecommendationBundle } from "@/lib/blend/recommendations";
-import { enrichFilms } from "@/lib/tmdb/client";
+import { intersectFilmsRobust, uniqueFilms } from "@/lib/blend/matching";
+import {
+  buildTasteProfile,
+  genreOverlapFromTaste,
+  weightedToGenreStats,
+} from "@/lib/blend/taste";
+import { enrichFilmsBatch } from "@/lib/tmdb/client";
+import { createAdminClient } from "@/lib/supabase/server";
 import type {
   BlendResults,
   DirectorStat,
   EnrichedFilm,
-  GenreStat,
   LetterboxdFilm,
   ParticipantData,
 } from "@/types/blend";
 
-function intersectFilms(a: LetterboxdFilm[], b: LetterboxdFilm[]): LetterboxdFilm[] {
-  const bSlugs = new Set(b.map((f) => f.slug));
-  return a.filter((f) => bSlugs.has(f.slug));
-}
-
-function uniqueFilms(...lists: LetterboxdFilm[][]): LetterboxdFilm[] {
-  const map = new Map<string, LetterboxdFilm>();
-  for (const list of lists) {
-    for (const film of list) {
-      map.set(film.slug, film);
-    }
-  }
-  return Array.from(map.values());
+export interface ComputeBlendOptions {
+  blendId?: string;
+  participantRowIds?: { slot: 1 | 2; id: string }[];
 }
 
 function computeMatchScore(
@@ -34,98 +30,212 @@ function computeMatchScore(
   return Math.min(100, Math.round((overlap / totalUnique) * 100));
 }
 
-function topGenres(stats: GenreStat[], n = 5): GenreStat[] {
-  return [...stats].sort((a, b) => b.count - a.count).slice(0, n);
-}
+function sharedDirectorsFromTaste(
+  user1Directors: { name: string; count: number }[],
+  user2Directors: { name: string; count: number }[],
+): DirectorStat[] {
+  const bMap = new Map(
+    user2Directors.map((d) => [d.name.toLowerCase(), d]),
+  );
 
-function sharedTopGenres(a: GenreStat[], b: GenreStat[]): string[] {
-  const aTop = new Set(topGenres(a, 8).map((g) => g.genre.toLowerCase()));
-  return topGenres(b, 8)
-    .filter((g) => aTop.has(g.genre.toLowerCase()))
-    .map((g) => g.genre);
-}
-
-function genreOverlapScore(a: GenreStat[], b: GenreStat[]): number {
-  const shared = sharedTopGenres(a, b);
-  if (shared.length === 0) return 0;
-  return Math.min(100, Math.round((shared.length / 8) * 100));
-}
-
-function sharedDirectors(a: DirectorStat[], b: DirectorStat[]): DirectorStat[] {
-  const bMap = new Map(b.map((d) => [d.director.toLowerCase(), d]));
-  return a
-    .filter((d) => bMap.has(d.director.toLowerCase()))
+  return user1Directors
+    .filter((d) => bMap.has(d.name.toLowerCase()))
     .map((d) => {
-      const other = bMap.get(d.director.toLowerCase())!;
+      const other = bMap.get(d.name.toLowerCase())!;
       return {
-        director: d.director,
+        director: d.name,
         count: d.count + other.count,
       };
     })
-    .sort((x, y) => y.count - x.count)
+    .sort((a, b) => b.count - a.count)
     .slice(0, 10);
+}
+
+function collectSeenTmdbIds(...lists: EnrichedFilm[][]): Set<number> {
+  const ids = new Set<number>();
+  for (const list of lists) {
+    for (const film of list) {
+      if (film.tmdbId) ids.add(film.tmdbId);
+    }
+  }
+  return ids;
+}
+
+function participantSeenTmdbIds(
+  watched: EnrichedFilm[],
+  watchlist: EnrichedFilm[],
+): number[] {
+  return Array.from(collectSeenTmdbIds(watched, watchlist));
+}
+
+async function persistEnrichedParticipants(
+  options: ComputeBlendOptions,
+  enriched: {
+    user1Watched: EnrichedFilm[];
+    user1Watchlist: EnrichedFilm[];
+    user2Watched: EnrichedFilm[];
+    user2Watchlist: EnrichedFilm[];
+  },
+): Promise<void> {
+  if (!options.blendId || !options.participantRowIds?.length) return;
+
+  const supabase = createAdminClient();
+  const updates = [
+    {
+      slot: 1 as const,
+      films_watched: enriched.user1Watched,
+      films_watchlist: enriched.user1Watchlist,
+      seen_tmdb_ids: participantSeenTmdbIds(
+        enriched.user1Watched,
+        enriched.user1Watchlist,
+      ),
+    },
+    {
+      slot: 2 as const,
+      films_watched: enriched.user2Watched,
+      films_watchlist: enriched.user2Watchlist,
+      seen_tmdb_ids: participantSeenTmdbIds(
+        enriched.user2Watched,
+        enriched.user2Watchlist,
+      ),
+    },
+  ];
+
+  await Promise.all(
+    updates.map(async (update) => {
+      const row = options.participantRowIds!.find((p) => p.slot === update.slot);
+      if (!row) return;
+
+      await supabase
+        .from("blend_participants")
+        .update({
+          films_watched: update.films_watched,
+          films_watchlist: update.films_watchlist,
+          seen_tmdb_ids: update.seen_tmdb_ids,
+        })
+        .eq("id", row.id);
+    }),
+  );
 }
 
 export async function computeBlendResults(
   participants: ParticipantData[],
+  options: ComputeBlendOptions = {},
 ): Promise<BlendResults> {
   if (participants.length < 2) {
     throw new Error("Need two participants to compute blend");
   }
 
   const [user1, user2] = participants;
-  const commonWatched = intersectFilms(user1.filmsWatched, user2.filmsWatched);
-  const commonWatchlist = intersectFilms(
-    user1.filmsWatchlist,
-    user2.filmsWatchlist,
+
+  const [
+    enrichedUser1Watched,
+    enrichedUser1Watchlist,
+    enrichedUser2Watched,
+    enrichedUser2Watchlist,
+  ] = await Promise.all([
+    enrichFilmsBatch(user1.filmsWatched),
+    enrichFilmsBatch(user1.filmsWatchlist),
+    enrichFilmsBatch(user2.filmsWatched),
+    enrichFilmsBatch(user2.filmsWatchlist),
+  ]);
+
+  const seenTmdbIds = collectSeenTmdbIds(
+    enrichedUser1Watched,
+    enrichedUser1Watchlist,
+    enrichedUser2Watched,
+    enrichedUser2Watchlist,
   );
+
+  await persistEnrichedParticipants(options, {
+    user1Watched: enrichedUser1Watched,
+    user1Watchlist: enrichedUser1Watchlist,
+    user2Watched: enrichedUser2Watched,
+    user2Watchlist: enrichedUser2Watchlist,
+  });
+
+  const enrichedUser1 = {
+    ...user1,
+    filmsWatched: enrichedUser1Watched,
+    filmsWatchlist: enrichedUser1Watchlist,
+  };
+  const enrichedUser2 = {
+    ...user2,
+    filmsWatched: enrichedUser2Watched,
+    filmsWatchlist: enrichedUser2Watchlist,
+  };
+
+  const commonWatchlistRaw = intersectFilmsRobust(
+    enrichedUser1.filmsWatchlist,
+    enrichedUser2.filmsWatchlist,
+    enrichedUser1.filmsWatchlist,
+    enrichedUser2.filmsWatchlist,
+  );
+
+  const commonWatchedRaw = intersectFilmsRobust(
+    enrichedUser1.filmsWatched,
+    enrichedUser2.filmsWatched,
+    enrichedUser1.filmsWatched,
+    enrichedUser2.filmsWatched,
+  );
+
   const totalUnique = uniqueFilms(
-    user1.filmsWatched,
-    user2.filmsWatched,
-    user1.filmsWatchlist,
-    user2.filmsWatchlist,
+    enrichedUser1.filmsWatched,
+    enrichedUser2.filmsWatched,
+    enrichedUser1.filmsWatchlist,
+    enrichedUser2.filmsWatchlist,
   ).length;
 
-  const watchedSlugs1 = new Set(user1.filmsWatched.map((f) => f.slug));
-  const watchedSlugs2 = new Set(user2.filmsWatched.map((f) => f.slug));
-  const watchTogetherRaw = commonWatchlist.filter(
-    (f) => !watchedSlugs1.has(f.slug) && !watchedSlugs2.has(f.slug),
+  const tasteProfile = await buildTasteProfile(enrichedUser1, enrichedUser2, {
+    user1: enrichedUser1Watched,
+    user2: enrichedUser2Watched,
+  });
+
+  const recommendations = await buildRecommendationBundle(
+    enrichedUser1,
+    enrichedUser2,
+    tasteProfile,
+    seenTmdbIds,
   );
-
-  const recommendationBundle = await buildRecommendationBundle(user1, user2);
-
-  const [enrichedWatched, enrichedWatchlist, enrichedTogether] = await Promise.all([
-    enrichFilms(commonWatched, 24),
-    enrichFilms(commonWatchlist, 36),
-    enrichFilms(watchTogetherRaw, 36),
-  ]);
 
   return {
     movieMatch: {
-      score: computeMatchScore(commonWatched, commonWatchlist, totalUnique),
-      commonWatched: enrichedWatched,
-      commonWatchlist: enrichedWatchlist,
+      score: computeMatchScore(
+        commonWatchedRaw,
+        commonWatchlistRaw,
+        totalUnique,
+      ),
+      commonWatched: commonWatchedRaw,
+      commonWatchlist: commonWatchlistRaw,
       totalUniqueFilms: totalUnique,
     },
     genreMatch: {
-      sharedTopGenres: recommendationBundle.tasteProfile.sharedGenres.length
-        ? recommendationBundle.tasteProfile.sharedGenres
-        : sharedTopGenres(user1.genreStats, user2.genreStats),
-      user1TopGenres: topGenres(user1.genreStats),
-      user2TopGenres: topGenres(user2.genreStats),
-      overlapScore: genreOverlapScore(user1.genreStats, user2.genreStats),
-      recommendations: recommendationBundle.genreRecommendations,
+      sharedTopGenres: tasteProfile.sharedGenresRanked
+        .slice(0, 8)
+        .map((g) => g.name),
+      user1TopGenres: weightedToGenreStats(tasteProfile.user1TopGenres),
+      user2TopGenres: weightedToGenreStats(tasteProfile.user2TopGenres),
+      overlapScore: genreOverlapFromTaste(tasteProfile),
     },
-    watchTogether: enrichedTogether as EnrichedFilm[],
     directorMatch: {
-      sharedDirectors: sharedDirectors(
-        user1.directorStats,
-        user2.directorStats,
+      sharedDirectors: sharedDirectorsFromTaste(
+        tasteProfile.user1TopDirectors.map((d) => ({
+          name: d.name,
+          count: d.count,
+        })),
+        tasteProfile.user2TopDirectors.map((d) => ({
+          name: d.name,
+          count: d.count,
+        })),
       ),
-      user1TopDirectors: user1.directorStats.slice(0, 5),
-      user2TopDirectors: user2.directorStats.slice(0, 5),
+      user1TopDirectors: tasteProfile.user1TopDirectors.slice(0, 5).map(
+        (d) => ({ director: d.name, count: d.count }),
+      ),
+      user2TopDirectors: tasteProfile.user2TopDirectors.slice(0, 5).map(
+        (d) => ({ director: d.name, count: d.count }),
+      ),
     },
-    tasteProfile: recommendationBundle.tasteProfile,
-    recommendations: recommendationBundle.recommendations,
+    tasteProfile,
+    recommendations,
   };
 }

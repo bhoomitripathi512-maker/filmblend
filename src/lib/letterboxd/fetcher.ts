@@ -1,5 +1,6 @@
 import * as cheerio from "cheerio";
-import { fetchUserFromRss } from "@/lib/letterboxd/rss";
+import { fetchUserFromRss, fetchWatchlistFromRss } from "@/lib/letterboxd/rss";
+import { uniqueFilms } from "@/lib/blend/matching";
 import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types/blend";
 
 const BASE_URL = "https://letterboxd.com";
@@ -181,8 +182,6 @@ function parseFilmsFromHtml(html: string): LetterboxdFilm[] {
   return films;
 }
 
-const HIGH_RATING_THRESHOLD = 4;
-
 function parseRatingFromElement(
   $: cheerio.CheerioAPI,
   el: Parameters<cheerio.CheerioAPI>[0],
@@ -241,15 +240,26 @@ function parseRatedFilmsFromHtml(html: string): RatedFilm[] {
     films.push({ slug, title, year, rating });
   });
 
-  if (films.length === 0) {
-    for (const film of parseFilmsFromHtml(html)) {
-      if (!seen.has(film.slug)) {
-        films.push({ ...film, rating: HIGH_RATING_THRESHOLD });
-      }
+  return films.sort((a, b) => b.rating - a.rating);
+}
+
+function mergeRatedFilms(htmlRated: RatedFilm[], rssRated: RatedFilm[]): RatedFilm[] {
+  const map = new Map<string, RatedFilm>();
+
+  for (const film of htmlRated) {
+    map.set(film.slug, film);
+  }
+
+  for (const film of rssRated) {
+    const existing = map.get(film.slug);
+    if (!existing) {
+      map.set(film.slug, film);
+    } else if (existing.rating <= 0 && film.rating > 0) {
+      map.set(film.slug, film);
     }
   }
 
-  return films.sort((a, b) => b.rating - a.rating);
+  return Array.from(map.values()).sort((a, b) => b.rating - a.rating);
 }
 
 function getPageCount(html: string): number {
@@ -318,7 +328,57 @@ export async function fetchUserWatchlist(
   username: string,
 ): Promise<LetterboxdFilm[]> {
   const normalized = username.trim().toLowerCase().replace(/^@/, "");
-  return fetchAllPages(`/${normalized}/watchlist/`);
+  const result = await fetchUserWatchlistWithSources(normalized);
+  return result.films;
+}
+
+export async function fetchUserWatchlistWithSources(username: string): Promise<{
+  films: LetterboxdFilm[];
+  source: "html" | "rss" | "merged";
+  htmlCount: number;
+  rssCount: number;
+}> {
+  const normalized = username.trim().toLowerCase().replace(/^@/, "");
+  let htmlFilms: LetterboxdFilm[] = [];
+
+  try {
+    htmlFilms = await fetchAllPages(`/${normalized}/watchlist/`);
+  } catch {
+    // HTML watchlist may be blocked; RSS fallback below.
+  }
+
+  let rssFilms: LetterboxdFilm[] = [];
+  try {
+    rssFilms = await fetchWatchlistFromRss(normalized);
+  } catch {
+    // Watchlist RSS unavailable for some profiles.
+  }
+
+  if (htmlFilms.length === 0 && rssFilms.length > 0) {
+    return {
+      films: rssFilms,
+      source: "rss",
+      htmlCount: 0,
+      rssCount: rssFilms.length,
+    };
+  }
+
+  if (htmlFilms.length > 0 && rssFilms.length > 0) {
+    const merged = uniqueFilms(htmlFilms, rssFilms);
+    return {
+      films: merged,
+      source: merged.length > htmlFilms.length ? "merged" : "html",
+      htmlCount: htmlFilms.length,
+      rssCount: rssFilms.length,
+    };
+  }
+
+  return {
+    films: htmlFilms,
+    source: "html",
+    htmlCount: htmlFilms.length,
+    rssCount: 0,
+  };
 }
 
 export async function fetchUserWatchedFilms(
@@ -421,25 +481,22 @@ export async function syncLetterboxdUser(username: string) {
 
     try {
       const rss = await fetchUserFromRss(normalized);
-      let filmsWatchlist: LetterboxdFilm[] = [];
-
-      try {
-        filmsWatchlist = await fetchUserWatchlist(normalized);
-      } catch {
-        // Watchlist HTML may be blocked even when RSS works.
-      }
+      const watchlistResult = await fetchUserWatchlistWithSources(normalized);
 
       return {
         username: rss.username,
         displayName: rss.displayName,
         avatarUrl: null,
-        filmsWatchlist,
+        filmsWatchlist: watchlistResult.films,
         filmsWatched: rss.filmsWatched,
         filmsRated: rss.filmsRated,
         genreStats: [],
         directorStats: [],
         syncedAt: new Date().toISOString(),
         syncMode: "rss" as const,
+        watchlistSource: watchlistResult.source,
+        watchlistHtmlCount: watchlistResult.htmlCount,
+        watchlistRssCount: watchlistResult.rssCount,
       };
     } catch (rssError) {
       if (htmlError instanceof LetterboxdError) throw htmlError;
@@ -456,9 +513,10 @@ export async function syncLetterboxdUser(username: string) {
 async function syncLetterboxdUserFromHtml(username: string) {
   const profile = await verifyLetterboxdUser(username);
 
-  const [filmsWatchlist, filmsWatched, filmsRated, genreStats, directorStats] =
+  const watchlistResult = await fetchUserWatchlistWithSources(profile.username);
+
+  const [filmsWatched, filmsRated, genreStats, directorStats] =
     await Promise.all([
-      fetchUserWatchlist(profile.username).catch(() => [] as LetterboxdFilm[]),
       fetchUserWatchedFilms(profile.username).catch(() => [] as LetterboxdFilm[]),
       fetchUserRatedFilms(profile.username).catch(() => [] as RatedFilm[]),
       fetchUserGenreStats(profile.username).catch(() => [] as GenreStat[]),
@@ -466,6 +524,8 @@ async function syncLetterboxdUserFromHtml(username: string) {
         () => [] as DirectorStat[],
       ),
     ]);
+
+  const filmsWatchlist = watchlistResult.films;
 
   if (filmsWatchlist.length === 0 && filmsWatched.length === 0) {
     throw new LetterboxdError(
@@ -480,8 +540,8 @@ async function syncLetterboxdUserFromHtml(username: string) {
   try {
     const rss = await fetchUserFromRss(profile.username);
 
-    if (rated.length === 0) {
-      rated = rss.filmsRated;
+    if (rss.filmsRated.length > 0) {
+      rated = mergeRatedFilms(rated, rss.filmsRated);
     }
 
     if (watched.length === 0) {
@@ -507,5 +567,8 @@ async function syncLetterboxdUserFromHtml(username: string) {
     directorStats,
     syncedAt: new Date().toISOString(),
     syncMode: "html" as const,
+    watchlistSource: watchlistResult.source,
+    watchlistHtmlCount: watchlistResult.htmlCount,
+    watchlistRssCount: watchlistResult.rssCount,
   };
 }

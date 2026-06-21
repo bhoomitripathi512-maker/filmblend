@@ -1,15 +1,10 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -25,26 +20,23 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
-    >
-      <body className="min-h-full flex flex-col bg-[#0c0c0f] text-zinc-100">
-        <header className="border-b border-white/5">
+    <html lang="en" className={`${inter.variable} h-full antialiased`}>
+      <body className="min-h-full flex flex-col bg-lb-void text-lb-pewter">
+        <header className="border-b border-lb-graphite">
           <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-            <Link href="/" className="text-lg font-bold text-white">
-              Film<span className="text-orange-400">blend</span>
+            <Link href="/" className="text-lg font-bold text-lb-white">
+              Film<span className="text-lb-green">blend</span>
             </Link>
             <Link
               href="/"
-              className="text-sm text-zinc-400 transition hover:text-white"
+              className="text-sm text-lb-fog transition hover:text-lb-white"
             >
               New blend
             </Link>
           </div>
         </header>
         <main className="flex flex-1 flex-col">{children}</main>
-        <footer className="border-t border-white/5 py-6 text-center text-xs text-zinc-600">
+        <footer className="border-t border-lb-graphite py-6 text-center text-xs text-lb-fog">
           Not affiliated with Letterboxd. Film data enriched via TMDB.
         </footer>
       </body>

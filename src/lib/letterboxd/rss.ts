@@ -44,13 +44,19 @@ function parseRssFilms(xml: string): RatedFilm[] {
 
 async function fetchRss(path: string): Promise<string> {
   const url = `${BASE_URL}${path}`;
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/rss+xml, application/xml, text/xml, */*",
-      "User-Agent": "Filmblend/1.0 (+https://filmblend.vercel.app)",
-    },
-    cache: "no-store",
-  });
+  const proxyBase = process.env.LETTERBOXD_PROXY_URL?.replace(/\/$/, "");
+
+  const response = proxyBase
+    ? await fetch(`${proxyBase}?url=${encodeURIComponent(url)}`, {
+        cache: "no-store",
+      })
+    : await fetch(url, {
+        headers: {
+          Accept: "application/rss+xml, application/xml, text/xml, */*",
+          "User-Agent": "Filmblend/1.0 (+https://filmblend.vercel.app)",
+        },
+        cache: "no-store",
+      });
 
   if (response.status === 404) {
     throw new Error("User not found");
@@ -60,7 +66,21 @@ async function fetchRss(path: string): Promise<string> {
     throw new Error(`RSS request failed (${response.status})`);
   }
 
-  return response.text();
+  const text = await response.text();
+  if (!text.includes("<rss") && !text.includes("<feed") && !text.includes("<item>")) {
+    throw new Error("RSS request blocked");
+  }
+
+  return text;
+}
+
+export async function fetchWatchlistFromRss(
+  username: string,
+): Promise<LetterboxdFilm[]> {
+  const normalized = username.trim().toLowerCase().replace(/^@/, "");
+  const xml = await fetchRss(`/${normalized}/watchlist/rss/`);
+  const rated = parseRssFilms(xml);
+  return rated.map(({ slug, title, year }) => ({ slug, title, year }));
 }
 
 export async function fetchUserFromRss(username: string): Promise<{

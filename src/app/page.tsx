@@ -30,13 +30,11 @@ export default function HomePage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-16">
       <div className="text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-orange-400">
-          Filmblend
-        </p>
-        <h1 className="mt-4 text-4xl font-bold tracking-tight text-white sm:text-5xl">
+        <p className="eyebrow text-sm font-semibold text-lb-green">Filmblend</p>
+        <h1 className="mt-4 text-4xl font-bold tracking-tight text-lb-white sm:text-5xl">
           Your Letterboxd taste, blended
         </h1>
-        <p className="mx-auto mt-5 max-w-xl text-lg text-zinc-400">
+        <p className="mx-auto mt-5 max-w-xl text-lg text-lb-fog">
           Create a blend link, send it to a friend, connect your Letterboxd
           profiles, and discover shared movies, genres, and what to watch
           together.
@@ -52,19 +50,19 @@ export default function HomePage() {
             },
             {
               title: "Taste Match",
-              desc: "Common genres, high-rated films, and directors",
+              desc: "Rating-weighted genres, directors, and mutual favorites",
             },
             {
               title: "Smart Picks",
-              desc: "Recommendations based on what you both love",
+              desc: "One perfect recommendation at a time — shuffle for more",
             },
           ].map((item) => (
             <div
               key={item.title}
-              className="rounded-2xl border border-white/10 bg-white/5 p-5"
+              className="rounded-xl border border-lb-graphite bg-lb-carbon p-5"
             >
-              <h3 className="font-semibold text-white">{item.title}</h3>
-              <p className="mt-2 text-sm text-zinc-400">{item.desc}</p>
+              <h3 className="font-semibold text-lb-white">{item.title}</h3>
+              <p className="mt-2 text-sm text-lb-fog">{item.desc}</p>
             </div>
           ))}
         </div>
@@ -73,7 +71,7 @@ export default function HomePage() {
           type="button"
           onClick={createBlend}
           disabled={loading}
-          className="w-full rounded-2xl bg-orange-500 py-4 text-lg font-semibold text-black transition hover:bg-orange-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full rounded-xl bg-lb-green py-4 text-lg font-semibold text-lb-void transition hover:bg-lb-green-dim disabled:cursor-not-allowed disabled:opacity-50"
         >
           {loading ? "Creating your blend…" : "Create a blend link"}
         </button>
@@ -84,7 +82,7 @@ export default function HomePage() {
           </p>
         )}
 
-        <p className="text-center text-xs text-zinc-600">
+        <p className="text-center text-xs text-lb-fog">
           Requires public Letterboxd profiles. Works on any device — your blends
           are saved in the cloud.
         </p>

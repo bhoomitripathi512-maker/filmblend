@@ -109,6 +109,14 @@ export async function POST(
     .update({ status: newStatus })
     .eq("id", blend.id);
 
+  await supabase
+    .from("blends")
+    .update({
+      results_json: null,
+      results_computed_at: null,
+    })
+    .eq("id", blend.id);
+
   return NextResponse.json({
     ok: true,
     status: newStatus,
@@ -122,6 +130,8 @@ export async function POST(
       ratedCount: synced.filmsRated.length,
       syncedAt: synced.syncedAt,
       syncMode: synced.syncMode,
+      watchlistSource:
+        "watchlistSource" in synced ? synced.watchlistSource : undefined,
     },
   });
 }

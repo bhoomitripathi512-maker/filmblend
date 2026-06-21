@@ -1,4 +1,9 @@
 import type { EnrichedFilm, LetterboxdFilm } from "@/types/blend";
+import {
+  readFilmCache,
+  readFilmCacheBatch,
+  writeFilmCache,
+} from "@/lib/tmdb/cache";
 
 const TMDB_BASE = "https://api.themoviedb.org/3";
 
@@ -74,7 +79,19 @@ async function findTmdbId(film: LetterboxdFilm): Promise<number | null> {
   const data = await tmdbFetch<{ results: TmdbSearchResult[] }>(
     `/search/movie?query=${query}${yearParam}`,
   );
-  return data?.results?.[0]?.id ?? null;
+  const results = data?.results ?? [];
+  if (results.length === 0) return null;
+
+  if (film.year) {
+    const yearMatch = results.find(
+      (result) =>
+        result.release_date &&
+        parseInt(result.release_date.slice(0, 4), 10) === film.year,
+    );
+    if (yearMatch) return yearMatch.id;
+  }
+
+  return results[0].id;
 }
 
 async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails | null> {
@@ -83,15 +100,11 @@ async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails | null>
   );
 }
 
-export async function enrichFilm(film: LetterboxdFilm): Promise<EnrichedFilm> {
-  if (!isTmdbConfigured()) return { ...film };
-
-  const tmdbId = await findTmdbId(film);
-  if (!tmdbId) return { ...film };
-
-  const details = await getMovieDetails(tmdbId);
-  if (!details) return { ...film, tmdbId };
-
+function detailsToEnriched(
+  film: LetterboxdFilm,
+  tmdbId: number,
+  details: TmdbMovieDetails,
+): EnrichedFilm {
   const directors =
     details.credits?.crew
       ?.filter((c) => c.job === "Director")
@@ -112,12 +125,78 @@ export async function enrichFilm(film: LetterboxdFilm): Promise<EnrichedFilm> {
   };
 }
 
+export async function enrichFilm(film: LetterboxdFilm): Promise<EnrichedFilm> {
+  if (!isTmdbConfigured()) return { ...film };
+
+  const cached = await readFilmCache(film.slug);
+  if (cached) return { ...film, ...cached };
+
+  const tmdbId = await findTmdbId(film);
+  if (!tmdbId) return { ...film };
+
+  const details = await getMovieDetails(tmdbId);
+  if (!details) return { ...film, tmdbId };
+
+  const enriched = detailsToEnriched(film, tmdbId, details);
+  await writeFilmCache(enriched);
+  return enriched;
+}
+
+async function enrichWithConcurrency(
+  films: LetterboxdFilm[],
+  concurrency = 6,
+): Promise<EnrichedFilm[]> {
+  const results: EnrichedFilm[] = new Array(films.length);
+  let index = 0;
+
+  async function worker() {
+    while (index < films.length) {
+      const current = index;
+      index += 1;
+      results[current] = await enrichFilm(films[current]);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, films.length) }, () => worker()),
+  );
+
+  return results;
+}
+
+/** Enriches every film — no truncation. Uses cache + bounded concurrency. */
+export async function enrichFilmsBatch(
+  films: LetterboxdFilm[],
+): Promise<EnrichedFilm[]> {
+  if (films.length === 0) return [];
+  if (!isTmdbConfigured()) return films.map((film) => ({ ...film }));
+
+  const cache = await readFilmCacheBatch(films.map((f) => f.slug));
+  const toFetch: LetterboxdFilm[] = [];
+  const results: EnrichedFilm[] = films.map((film) => {
+    const cached = cache.get(film.slug);
+    if (cached) return { ...film, ...cached };
+    toFetch.push(film);
+    return { ...film };
+  });
+
+  if (toFetch.length === 0) return results;
+
+  const fetched = await enrichWithConcurrency(toFetch);
+  const fetchedMap = new Map(fetched.map((f) => [f.slug, f]));
+
+  return films.map(
+    (film) => fetchedMap.get(film.slug) ?? cache.get(film.slug) ?? { ...film },
+  );
+}
+
+/** @deprecated Use enrichFilmsBatch — this no longer truncates when limit omitted. */
 export async function enrichFilms(
   films: LetterboxdFilm[],
-  limit = 30,
+  limit?: number,
 ): Promise<EnrichedFilm[]> {
-  const slice = films.slice(0, limit);
-  return Promise.all(slice.map(enrichFilm));
+  const slice = limit ? films.slice(0, limit) : films;
+  return enrichFilmsBatch(slice);
 }
 
 export async function searchPersonId(name: string): Promise<number | null> {
@@ -132,9 +211,10 @@ export async function discoverMovies(options: {
   personId?: number;
   excludeIds?: number[];
   page?: number;
+  sortBy?: string;
 }): Promise<TmdbSearchResult[]> {
   const params = new URLSearchParams({
-    sort_by: "vote_average.desc",
+    sort_by: options.sortBy ?? "vote_average.desc",
     "vote_count.gte": "200",
     include_adult: "false",
     page: String(options.page ?? 1),
@@ -198,4 +278,16 @@ export function posterUrl(
 ): string | null {
   if (!path) return null;
   return `https://image.tmdb.org/t/p/${size}${path}`;
+}
+
+export async function resolveExcludeTmdbIds(
+  films: LetterboxdFilm[],
+  cap = 300,
+): Promise<number[]> {
+  const enriched = await enrichFilmsBatch(films.slice(0, cap));
+  const ids = new Set<number>();
+  for (const film of enriched) {
+    if (film.tmdbId) ids.add(film.tmdbId);
+  }
+  return Array.from(ids);
 }

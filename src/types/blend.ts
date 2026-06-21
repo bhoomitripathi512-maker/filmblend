@@ -42,9 +42,18 @@ export interface EnrichedFilm extends LetterboxdFilm {
   rating?: number;
 }
 
+export interface RecommendationExplanation {
+  headline: string;
+  summary: string;
+  tasteSignals: string[];
+  tmdbSignals: string[];
+}
+
 export interface RecommendedFilm extends EnrichedFilm {
+  rank: number;
   reason: string;
   matchScore: number;
+  explanation: RecommendationExplanation;
 }
 
 export interface GenreRecommendationGroup {
@@ -52,10 +61,31 @@ export interface GenreRecommendationGroup {
   films: RecommendedFilm[];
 }
 
+export interface WeightedPreference {
+  name: string;
+  score: number;
+  count: number;
+  avgRating: number;
+  rank: number;
+  user1Rank?: number;
+  user2Rank?: number;
+}
+
 export interface TasteProfile {
-  sharedGenres: string[];
-  sharedDirectors: string[];
+  topSharedGenre: WeightedPreference | null;
+  topSharedDirector: WeightedPreference | null;
+  sharedGenresRanked: WeightedPreference[];
+  sharedDirectorsRanked: WeightedPreference[];
+  user1TopGenres: WeightedPreference[];
+  user2TopGenres: WeightedPreference[];
+  user1TopDirectors: WeightedPreference[];
+  user2TopDirectors: WeightedPreference[];
   commonHighlyRated: EnrichedFilm[];
+  enrichmentCoverage: { enriched: number; total: number };
+  /** @deprecated use sharedGenresRanked names */
+  sharedGenres: string[];
+  /** @deprecated use sharedDirectorsRanked names */
+  sharedDirectors: string[];
 }
 
 export interface BlendResults {
@@ -70,9 +100,11 @@ export interface BlendResults {
     user1TopGenres: GenreStat[];
     user2TopGenres: GenreStat[];
     overlapScore: number;
-    recommendations: GenreRecommendationGroup[];
+    /** @deprecated removed from UI — may exist in cached results */
+    recommendations?: GenreRecommendationGroup[];
   };
-  watchTogether: EnrichedFilm[];
+  /** @deprecated removed from UI — may exist in cached results */
+  watchTogether?: EnrichedFilm[];
   directorMatch: {
     sharedDirectors: DirectorStat[];
     user1TopDirectors: DirectorStat[];
