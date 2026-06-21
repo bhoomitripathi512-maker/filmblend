@@ -43,6 +43,14 @@ const BROWSER_HEADERS = {
   "sec-fetch-site": "none",
 };
 
+export function isCloudflareChallengeHtml(html: string): boolean {
+  return (
+    html.includes("Just a moment...") ||
+    html.includes("cf-chl-opt") ||
+    html.includes("challenge-platform")
+  );
+}
+
 async function fetchHtml(path: string): Promise<string> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
   const proxyBase = letterboxdProxyBase();
@@ -66,7 +74,16 @@ async function fetchHtml(path: string): Promise<string> {
         );
       }
 
-      return response.text();
+      const text = await response.text();
+      if (isCloudflareChallengeHtml(text)) {
+        console.warn(
+          "Letterboxd proxy returned Cloudflare challenge, falling back to direct scraping:",
+          url,
+        );
+        return fetchHtmlDirect(url);
+      }
+
+      return text;
     } catch (error) {
       if (error instanceof LetterboxdError) throw error;
       if (!isNetworkFetchError(error)) throw error;
