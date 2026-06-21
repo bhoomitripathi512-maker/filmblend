@@ -266,8 +266,8 @@ export function BlendResultsView({
           Recommended for You Both
         </h3>
         <p className="mt-1 text-sm text-zinc-400">
-          Suggestions based on films you both loved, shared genres, and directors
-          — excluding what you&apos;ve already watched
+          New picks based on films you both loved, shared genres, and directors
+          — excluding anything you&apos;ve watched or already have on a watchlist
         </p>
         <div className="mt-6">
           <FilmGrid

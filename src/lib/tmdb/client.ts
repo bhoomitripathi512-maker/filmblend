@@ -167,6 +167,17 @@ export async function getMovieRecommendations(
   return (data?.results ?? []).filter((m) => !exclude.has(m.id));
 }
 
+export async function getSimilarMovies(
+  tmdbId: number,
+  excludeIds: number[] = [],
+): Promise<TmdbSearchResult[]> {
+  const data = await tmdbFetch<{ results: TmdbSearchResult[] }>(
+    `/movie/${tmdbId}/similar`,
+  );
+  const exclude = new Set(excludeIds);
+  return (data?.results ?? []).filter((m) => !exclude.has(m.id));
+}
+
 export function tmdbResultToEnriched(result: TmdbSearchResult): EnrichedFilm {
   const year = result.release_date
     ? parseInt(result.release_date.slice(0, 4), 10)

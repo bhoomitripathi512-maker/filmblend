@@ -3,6 +3,7 @@ import {
   enrichFilm,
   enrichFilms,
   getMovieRecommendations,
+  getSimilarMovies,
   isTmdbConfigured,
   mapGenreToTmdbId,
   searchPersonId,
@@ -33,6 +34,23 @@ function normalizeGenre(genre: string): string {
   return genre.toLowerCase().trim();
 }
 
+function uniqueFilms(...lists: LetterboxdFilm[][]): LetterboxdFilm[] {
+  const map = new Map<string, LetterboxdFilm>();
+  for (const list of lists) {
+    for (const film of list) {
+      map.set(film.slug, film);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function topRatedFilms(user: ParticipantData, limit = 8): RatedFilm[] {
+  return [...user.filmsRated]
+    .filter((film) => film.rating >= HIGH_RATING_THRESHOLD)
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, limit);
+}
+
 function intersectRatedFilms(
   a: RatedFilm[],
   b: RatedFilm[],
@@ -52,6 +70,32 @@ function intersectRatedFilms(
       };
     })
     .sort((x, y) => y.rating - x.rating);
+}
+
+function tasteSeedFilms(
+  user1: ParticipantData,
+  user2: ParticipantData,
+  commonHighlyRated: RatedFilm[],
+): RatedFilm[] {
+  const bySlug = new Map<string, RatedFilm>();
+
+  for (const film of commonHighlyRated) {
+    bySlug.set(film.slug, { ...film, rating: film.rating + 1 });
+  }
+
+  for (const film of topRatedFilms(user1, 6)) {
+    const existing = bySlug.get(film.slug);
+    bySlug.set(film.slug, existing ?? film);
+  }
+
+  for (const film of topRatedFilms(user2, 6)) {
+    const existing = bySlug.get(film.slug);
+    bySlug.set(film.slug, existing ?? film);
+  }
+
+  return Array.from(bySlug.values())
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, 12);
 }
 
 function sharedGenresByWeight(
@@ -97,16 +141,25 @@ function sharedDirectorNames(
     .slice(0, 8);
 }
 
-function buildExcludeTmdbIds(
+async function buildExcludeTmdbIds(
   user1: ParticipantData,
   user2: ParticipantData,
-  enrichedWatched: EnrichedFilm[],
-): Set<number> {
+): Promise<number[]> {
+  const knownFilms = uniqueFilms(
+    user1.filmsWatched,
+    user2.filmsWatched,
+    user1.filmsWatchlist,
+    user2.filmsWatchlist,
+  );
+
+  const enriched = await enrichFilms(knownFilms, 120);
   const ids = new Set<number>();
-  for (const film of enrichedWatched) {
+
+  for (const film of enriched) {
     if (film.tmdbId) ids.add(film.tmdbId);
   }
-  return ids;
+
+  return Array.from(ids);
 }
 
 function addCandidate(
@@ -163,7 +216,7 @@ async function buildGenreRecommendations(
 }
 
 async function buildTasteRecommendations(
-  commonHighlyRated: RatedFilm[],
+  seedFilms: RatedFilm[],
   sharedGenres: string[],
   sharedDirectors: string[],
   excludeIds: number[],
@@ -171,14 +224,17 @@ async function buildTasteRecommendations(
   if (!isTmdbConfigured()) return [];
 
   const candidates = new Map<number, ScoredCandidate>();
+  const enrichedSeeds = await enrichFilms(seedFilms, 12);
 
-  const enrichedCommon = await enrichFilms(commonHighlyRated.slice(0, 6), 6);
-
-  for (const film of enrichedCommon) {
+  for (const film of enrichedSeeds) {
     if (!film.tmdbId) continue;
 
-    const recs = await getMovieRecommendations(film.tmdbId, excludeIds);
-    for (const rec of recs.slice(0, 6)) {
+    const [recs, similar] = await Promise.all([
+      getMovieRecommendations(film.tmdbId, excludeIds),
+      getSimilarMovies(film.tmdbId, excludeIds),
+    ]);
+
+    for (const rec of recs.slice(0, 5)) {
       addCandidate(candidates, {
         tmdbId: rec.id,
         title: rec.title,
@@ -187,7 +243,20 @@ async function buildTasteRecommendations(
           : undefined,
         posterPath: rec.poster_path,
         score: 4,
-        reason: `Similar to ${film.title} — a film you both rated highly`,
+        reason: `Similar to ${film.title} — matches your taste`,
+      });
+    }
+
+    for (const rec of similar.slice(0, 3)) {
+      addCandidate(candidates, {
+        tmdbId: rec.id,
+        title: rec.title,
+        year: rec.release_date
+          ? parseInt(rec.release_date.slice(0, 4), 10)
+          : undefined,
+        posterPath: rec.poster_path,
+        score: 2,
+        reason: `In the same vein as ${film.title}`,
       });
     }
   }
@@ -266,7 +335,6 @@ async function buildTasteRecommendations(
 export async function buildRecommendationBundle(
   user1: ParticipantData,
   user2: ParticipantData,
-  commonWatchlist: LetterboxdFilm[],
 ): Promise<{
   tasteProfile: TasteProfile;
   genreRecommendations: GenreRecommendationGroup[];
@@ -279,26 +347,19 @@ export async function buildRecommendationBundle(
 
   const sharedGenres = sharedGenresByWeight(user1, user2);
   const sharedDirectors = sharedDirectorNames(user1, user2);
+  const seedFilms = tasteSeedFilms(user1, user2, commonHighlyRatedRaw);
 
   const commonHighlyRated = await enrichFilms(
     commonHighlyRatedRaw.slice(0, 12),
     12,
   );
 
-  const allWatched = [...user1.filmsWatched, ...user2.filmsWatched];
-  const enrichedWatched = await enrichFilms(allWatched, 40);
-  const excludeIds = Array.from(
-    buildExcludeTmdbIds(user1, user2, enrichedWatched),
-  );
-
-  for (const film of await enrichFilms(commonWatchlist, 40)) {
-    if (film.tmdbId) excludeIds.push(film.tmdbId);
-  }
+  const excludeIds = await buildExcludeTmdbIds(user1, user2);
 
   const [genreRecommendations, recommendations] = await Promise.all([
     buildGenreRecommendations(sharedGenres, excludeIds),
     buildTasteRecommendations(
-      commonHighlyRatedRaw,
+      seedFilms,
       sharedGenres,
       sharedDirectors,
       excludeIds,

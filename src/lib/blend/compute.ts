@@ -92,11 +92,7 @@ export async function computeBlendResults(
     (f) => !watchedSlugs1.has(f.slug) && !watchedSlugs2.has(f.slug),
   );
 
-  const recommendationBundle = await buildRecommendationBundle(
-    user1,
-    user2,
-    commonWatchlist,
-  );
+  const recommendationBundle = await buildRecommendationBundle(user1, user2);
 
   const [enrichedWatched, enrichedWatchlist, enrichedTogether] = await Promise.all([
     enrichFilms(commonWatched, 24),

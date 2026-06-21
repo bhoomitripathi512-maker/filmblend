@@ -32,9 +32,29 @@ npm install
 2. Run migrations in `supabase/migrations/` via the SQL Editor (run `002_films_rated.sql` if you already ran `001`)
 3. Copy `.env.example` to `.env.local` and add your Supabase URL and service role key
 
-### 3. TMDB (optional but recommended)
+### 3. TMDB (recommended for personalized picks)
 
-Get a free API key at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) for movie posters and genre metadata.
+TMDB powers movie posters, genre metadata, and taste-based recommendations.
+
+1. Create a free account at [themoviedb.org](https://www.themoviedb.org/signup)
+2. Open **Settings → API** at [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api)
+3. Request an API key (choose **Developer** → describe your app as a personal Letterboxd taste tool)
+4. Copy the **API Key (v3 auth)** value
+5. Add it to your environment:
+
+**Local** — in `.env.local`:
+
+```
+TMDB_API_KEY=your_key_here
+```
+
+**Vercel** — Project → Settings → Environment Variables:
+
+```
+TMDB_API_KEY = your_key_here   (Production, Preview, Development)
+```
+
+Then redeploy. Recommendations exclude films either of you has watched or on either watchlist.
 
 ### 4. Run locally
 
