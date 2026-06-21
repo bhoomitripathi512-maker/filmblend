@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["got-scraping", "header-generator"],
+  serverExternalPackages: ["got-scraping"],
 };
 
 export default nextConfig;

@@ -4,18 +4,23 @@ import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types
 
 const BASE_URL = "https://letterboxd.com";
 
+const BROWSER_HEADERS = {
+  "user-agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "accept-language": "en-US,en;q=0.9",
+  "sec-fetch-dest": "document",
+  "sec-fetch-mode": "navigate",
+  "sec-fetch-site": "none",
+};
+
 async function fetchHtml(path: string): Promise<string> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
 
   try {
     const response = await gotScraping({
       url,
-      headerGeneratorOptions: {
-        browsers: [{ name: "chrome", minVersion: 120 }],
-        devices: ["desktop"],
-        locales: ["en-US"],
-        operatingSystems: ["macos"],
-      },
+      headers: BROWSER_HEADERS,
       retry: { limit: 2 },
       timeout: { request: 25_000 },
     });
