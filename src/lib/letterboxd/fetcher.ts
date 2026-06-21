@@ -6,6 +6,9 @@ import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types
 
 const BASE_URL = "https://letterboxd.com";
 
+/** Watched /films/ pages to scrape per profile (page 1 … N). */
+export const WATCHED_FILMS_MAX_PAGES = 5;
+
 async function ensureHeaderGeneratorData(): Promise<void> {
   const fs = await import("node:fs");
   const path = await import("node:path");
@@ -232,28 +235,46 @@ function parseRatedFilmsFromHtml(html: string): RatedFilm[] {
   const seen = new Set<string>();
 
   $(
-    "li.poster-container, div.poster-container, div.film-poster, li.grid-item",
+    "li.poster-container, div.poster-container, div.film-poster, li.grid-item, li.griditem",
   ).each((_, el) => {
     const $el = $(el);
-    const link = $el.find('a[href*="/film/"]').first();
-    const href = link.attr("href") ?? $el.attr("href") ?? "";
-    const match = href.match(/\/film\/([^/]+)\/?/);
-    if (!match) return;
+    const reactComponent = $el.find("[data-item-slug]").first();
+    let slug = "";
+    let title: string | undefined;
+    let year: number | undefined;
 
-    const slug = match[1];
-    if (seen.has(slug)) return;
+    if (reactComponent.length) {
+      slug = reactComponent.attr("data-item-slug") ?? "";
+      const name = reactComponent.attr("data-item-name") ?? "";
+      const titleMatch = name.match(/^(.+?)(?:\s*\((\d{4})\))?$/);
+      title = titleMatch?.[1]?.trim();
+      year = titleMatch?.[2] ? parseInt(titleMatch[2], 10) : undefined;
+    } else {
+      const link = $el.find('a[href*="/film/"]').first();
+      const href = link.attr("href") ?? $el.attr("href") ?? "";
+      const match = href.match(/\/film\/([^/]+)\/?/);
+      if (!match) return;
+      slug = match[1];
+
+      const imgAlt = link.find("img").attr("alt") ?? "";
+      const label = imgAlt || link.text().trim();
+      const titleMatch = label.match(/^(.+?)(?:\s*\((\d{4})\))?$/);
+      title = titleMatch?.[1]?.trim();
+      year = titleMatch?.[2] ? parseInt(titleMatch[2], 10) : undefined;
+    }
+
+    if (!slug || seen.has(slug)) return;
     seen.add(slug);
 
     const rating = parseRatingFromElement($, el);
     if (rating <= 0) return;
 
-    const imgAlt = link.find("img").attr("alt") ?? "";
-    const label = imgAlt || link.text().trim();
-    const titleMatch = label.match(/^(.+?)(?:\s*\((\d{4})\))?$/);
-    const title = titleMatch?.[1]?.trim() || slug.replace(/-/g, " ");
-    const year = titleMatch?.[2] ? parseInt(titleMatch[2], 10) : undefined;
-
-    films.push({ slug, title, year, rating });
+    films.push({
+      slug,
+      title: title || slug.replace(/-/g, " "),
+      year,
+      rating,
+    });
   });
 
   return films.sort((a, b) => b.rating - a.rating);
@@ -292,6 +313,27 @@ function getPageCount(html: string): number {
   return maxPage;
 }
 
+function dedupeFilms(films: LetterboxdFilm[]): LetterboxdFilm[] {
+  const unique = new Map<string, LetterboxdFilm>();
+  for (const film of films) {
+    unique.set(film.slug, film);
+  }
+  return Array.from(unique.values());
+}
+
+function dedupeRatedFilms(films: RatedFilm[]): RatedFilm[] {
+  const unique = new Map<string, RatedFilm>();
+  for (const film of films) {
+    unique.set(film.slug, film);
+  }
+  return Array.from(unique.values()).sort((a, b) => b.rating - a.rating);
+}
+
+export function watchedFilmsPagePath(username: string, page: number): string {
+  const normalized = username.trim().toLowerCase().replace(/^@/, "");
+  return `/${normalized}/films/page/${page}/`;
+}
+
 async function fetchAllPages(
   basePath: string,
   maxPages = 50,
@@ -305,17 +347,47 @@ async function fetchAllPages(
     try {
       const html = await fetchHtml(`${normalizedPath}page/${page}/`);
       allFilms.push(...parseFilmsFromHtml(html));
-    } catch {
-      // Letterboxd often blocks paginated /films/ requests; keep page 1 data.
-      break;
+    } catch (error) {
+      console.warn(
+        `Letterboxd pagination failed for ${normalizedPath} page ${page}:`,
+        error instanceof Error ? error.message : error,
+      );
     }
   }
 
-  const unique = new Map<string, LetterboxdFilm>();
-  for (const film of allFilms) {
-    unique.set(film.slug, film);
+  return dedupeFilms(allFilms);
+}
+
+export async function fetchUserWatchedFilmsWithRatings(username: string): Promise<{
+  films: LetterboxdFilm[];
+  ratingsFromWatched: RatedFilm[];
+  pagesFetched: number[];
+}> {
+  const normalized = username.trim().toLowerCase().replace(/^@/, "");
+  const allFilms: LetterboxdFilm[] = [];
+  const allRated: RatedFilm[] = [];
+  const pagesFetched: number[] = [];
+
+  for (let page = 1; page <= WATCHED_FILMS_MAX_PAGES; page += 1) {
+    const path = watchedFilmsPagePath(normalized, page);
+    try {
+      const html = await fetchHtml(path);
+      pagesFetched.push(page);
+      allFilms.push(...parseFilmsFromHtml(html));
+      allRated.push(...parseRatedFilmsFromHtml(html));
+    } catch (error) {
+      console.warn(
+        `Letterboxd watched films page ${page} failed for ${normalized}:`,
+        error instanceof Error ? error.message : error,
+      );
+    }
   }
-  return Array.from(unique.values());
+
+  return {
+    films: dedupeFilms(allFilms),
+    ratingsFromWatched: dedupeRatedFilms(allRated),
+    pagesFetched,
+  };
 }
 
 export async function verifyLetterboxdUser(username: string): Promise<{
@@ -400,8 +472,8 @@ export async function fetchUserWatchlistWithSources(username: string): Promise<{
 export async function fetchUserWatchedFilms(
   username: string,
 ): Promise<LetterboxdFilm[]> {
-  const normalized = username.trim().toLowerCase().replace(/^@/, "");
-  return fetchAllPages(`/${normalized}/films/`);
+  const result = await fetchUserWatchedFilmsWithRatings(username);
+  return result.films;
 }
 
 export async function fetchUserRatedFilms(
@@ -419,12 +491,7 @@ export async function fetchUserRatedFilms(
     allRated.push(...parseRatedFilmsFromHtml(html));
   }
 
-  const unique = new Map<string, RatedFilm>();
-  for (const film of allRated) {
-    unique.set(film.slug, film);
-  }
-
-  return Array.from(unique.values()).sort((a, b) => b.rating - a.rating);
+  return dedupeRatedFilms(allRated);
 }
 
 export async function fetchUserGenreStats(
@@ -533,9 +600,13 @@ async function syncLetterboxdUserFromHtml(username: string) {
 
   const watchlistResult = await fetchUserWatchlistWithSources(profile.username);
 
-  const [filmsWatched, filmsRated, genreStats, directorStats] =
+  const [watchedResult, filmsRated, genreStats, directorStats] =
     await Promise.all([
-      fetchUserWatchedFilms(profile.username).catch(() => [] as LetterboxdFilm[]),
+      fetchUserWatchedFilmsWithRatings(profile.username).catch(() => ({
+        films: [] as LetterboxdFilm[],
+        ratingsFromWatched: [] as RatedFilm[],
+        pagesFetched: [] as number[],
+      })),
       fetchUserRatedFilms(profile.username).catch(() => [] as RatedFilm[]),
       fetchUserGenreStats(profile.username).catch(() => [] as GenreStat[]),
       fetchUserDirectorStats(profile.username).catch(
@@ -544,6 +615,7 @@ async function syncLetterboxdUserFromHtml(username: string) {
     ]);
 
   const filmsWatchlist = watchlistResult.films;
+  const filmsWatched = watchedResult.films;
 
   if (filmsWatchlist.length === 0 && filmsWatched.length === 0) {
     throw new LetterboxdError(
@@ -552,7 +624,7 @@ async function syncLetterboxdUserFromHtml(username: string) {
     );
   }
 
-  let rated = filmsRated;
+  let rated = mergeRatedFilms(watchedResult.ratingsFromWatched, filmsRated);
   let watched = filmsWatched;
 
   try {
@@ -590,3 +662,6 @@ async function syncLetterboxdUserFromHtml(username: string) {
     watchlistRssCount: watchlistResult.rssCount,
   };
 }
+
+/** @internal Exported for unit tests only. */
+export const parseRatedFilmsFromHtmlForTest = parseRatedFilmsFromHtml;
