@@ -244,13 +244,13 @@ async function fetchAllPages(
   basePath: string,
   maxPages = 50,
 ): Promise<LetterboxdFilm[]> {
-  const firstHtml = await fetchHtml(basePath);
+  const normalizedPath = basePath.endsWith("/") ? basePath : `${basePath}/`;
+  const firstHtml = await fetchHtml(normalizedPath);
   const pageCount = Math.min(getPageCount(firstHtml), maxPages);
   const allFilms = parseFilmsFromHtml(firstHtml);
 
   for (let page = 2; page <= pageCount; page += 1) {
-    const separator = basePath.includes("?") ? "&" : "?";
-    const html = await fetchHtml(`${basePath}${separator}page=${page}`);
+    const html = await fetchHtml(`${normalizedPath}page/${page}/`);
     allFilms.push(...parseFilmsFromHtml(html));
   }
 
@@ -427,18 +427,37 @@ async function syncLetterboxdUserFromHtml(username: string) {
 
   const [filmsWatchlist, filmsWatched, filmsRated, genreStats, directorStats] =
     await Promise.all([
-      fetchUserWatchlist(profile.username),
-      fetchUserWatchedFilms(profile.username),
-      fetchUserRatedFilms(profile.username),
-      fetchUserGenreStats(profile.username),
-      fetchUserDirectorStats(profile.username),
+      fetchUserWatchlist(profile.username).catch(() => [] as LetterboxdFilm[]),
+      fetchUserWatchedFilms(profile.username).catch(() => [] as LetterboxdFilm[]),
+      fetchUserRatedFilms(profile.username).catch(() => [] as RatedFilm[]),
+      fetchUserGenreStats(profile.username).catch(() => [] as GenreStat[]),
+      fetchUserDirectorStats(profile.username).catch(
+        () => [] as DirectorStat[],
+      ),
     ]);
+
+  if (filmsWatchlist.length === 0 && filmsWatched.length === 0) {
+    throw new LetterboxdError(
+      "Could not fetch Letterboxd profile data",
+      502,
+    );
+  }
+
+  let rated = filmsRated;
+  if (rated.length === 0) {
+    try {
+      const rss = await fetchUserFromRss(profile.username);
+      rated = rss.filmsRated;
+    } catch {
+      // RSS supplement is optional.
+    }
+  }
 
   return {
     ...profile,
     filmsWatchlist,
     filmsWatched,
-    filmsRated,
+    filmsRated: rated,
     genreStats,
     directorStats,
     syncedAt: new Date().toISOString(),
