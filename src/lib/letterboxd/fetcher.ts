@@ -40,6 +40,28 @@ const BROWSER_HEADERS = {
 
 async function fetchHtml(path: string): Promise<string> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
+  const proxyBase = process.env.LETTERBOXD_PROXY_URL?.replace(/\/$/, "");
+
+  if (proxyBase) {
+    const response = await fetch(
+      `${proxyBase}?url=${encodeURIComponent(url)}`,
+      { cache: "no-store" },
+    );
+
+    if (response.status === 404) {
+      throw new LetterboxdError("User not found or profile is private", 404);
+    }
+
+    if (!response.ok) {
+      throw new LetterboxdError(
+        `Letterboxd request failed (${response.status})`,
+        response.status,
+      );
+    }
+
+    return response.text();
+  }
+
   await ensureHeaderGeneratorData();
   const { gotScraping } = await import("got-scraping");
 
