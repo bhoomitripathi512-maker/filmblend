@@ -133,6 +133,32 @@ function parseFilmsFromHtml(html: string): LetterboxdFilm[] {
   const films: LetterboxdFilm[] = [];
   const seen = new Set<string>();
 
+  function addFilm(slug: string, title?: string, year?: number) {
+    if (!slug || seen.has(slug)) return;
+    seen.add(slug);
+    films.push({
+      slug,
+      title: title?.trim() || slug.replace(/-/g, " "),
+      year,
+    });
+  }
+
+  $("[data-item-slug]").each((_, el) => {
+    const slug = $(el).attr("data-item-slug") ?? "";
+    const name = $(el).attr("data-item-name") ?? "";
+    const titleMatch = name.match(/^(.+?)(?:\s*\((\d{4})\))?$/);
+    addFilm(
+      slug,
+      titleMatch?.[1],
+      titleMatch?.[2] ? parseInt(titleMatch[2], 10) : undefined,
+    );
+  });
+
+  $("[data-film-slug]").each((_, el) => {
+    const slug = $(el).attr("data-film-slug") ?? "";
+    addFilm(slug);
+  });
+
   $('a[href*="/film/"]').each((_, el) => {
     const href = $(el).attr("href") ?? "";
     const match = href.match(/\/film\/([^/]+)\/?/);
