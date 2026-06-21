@@ -49,7 +49,7 @@ export function BlendLoading({ done }: { done?: boolean }) {
       <div className="kicker">Now blending</div>
 
       <div className="relative mb-10 mt-8 flex h-24 w-24 items-center justify-center">
-        <div className="absolute inset-0 animate-spin rounded-full border border-ink border-t-green" />
+        <div className="pointer-events-none absolute inset-0 animate-spin rounded-full border border-ink border-t-green" />
         <div className="relative flex h-14 w-14 flex-col items-center justify-center border border-ink bg-cream">
           <div className="h-1.5 w-8 bg-ink" />
           <div className="mt-1.5 flex gap-1">

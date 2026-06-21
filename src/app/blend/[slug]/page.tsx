@@ -7,9 +7,5 @@ export default async function BlendPage({
 }) {
   const { slug } = await params;
 
-  return (
-    <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-12">
-      <BlendPageClient slug={slug} />
-    </div>
-  );
+  return <BlendPageClient slug={slug} />;
 }

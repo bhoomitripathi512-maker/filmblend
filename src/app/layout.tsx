@@ -16,7 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="h-full antialiased">
       <body className="flex min-h-full flex-col bg-paper text-ink">
-        <header className="sticky top-0 z-40 grid h-16 grid-cols-[1fr_auto_1fr] items-center border-b border-ink bg-paper/90 px-5 backdrop-blur-md sm:px-7">
+        <header className="sticky top-0 z-50 grid h-16 grid-cols-[1fr_auto_1fr] items-center border-b border-ink bg-paper px-5 sm:px-7">
           <Link
             href="/"
             aria-label="Filmblend home"

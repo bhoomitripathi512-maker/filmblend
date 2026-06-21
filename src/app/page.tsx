@@ -60,7 +60,7 @@ export default function HomePage() {
               <span className="pill">Curated picks</span>
             </div>
 
-            <div className="mt-9 max-w-[620px] border border-ink bg-paper p-5">
+            <div className="relative z-10 mt-9 max-w-[620px] border border-ink bg-paper p-5">
               <p className="text-[15px] leading-[1.4] text-muted">
                 Create a blend link, send it to a friend, and connect your
                 Letterboxd profiles to reveal your shared cinematic taste.
@@ -73,7 +73,7 @@ export default function HomePage() {
                   type="button"
                   onClick={createBlend}
                   disabled={loading}
-                  className="btn fill"
+                  className="btn fill shrink-0"
                 >
                   {loading ? "Creating…" : "Create blend"}
                 </button>
@@ -86,7 +86,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="relative hidden min-h-[600px] overflow-hidden border border-ink bg-ink lg:block">
+          <div className="pointer-events-none relative hidden min-h-[600px] overflow-hidden border border-ink bg-ink lg:block">
             <div className="absolute inset-0 bg-gradient-to-br from-green2 via-ink to-ink" />
             <div className="absolute inset-0 bg-gradient-to-t from-black/65 to-black/10" />
             <div className="absolute inset-x-6 bottom-6 z-[2] flex items-end justify-between gap-5 text-paper">

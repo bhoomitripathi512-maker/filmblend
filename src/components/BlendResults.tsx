@@ -50,7 +50,7 @@ function ScoreBoard({
           <div className="kicker">
             {name1} × {name2}
           </div>
-          <div className="mt-2 text-[clamp(110px,16vw,240px)] font-black leading-[0.72] tracking-[-0.12em]">
+          <div className="mt-2 overflow-hidden text-[clamp(110px,16vw,240px)] font-black leading-[0.72] tracking-[-0.12em]">
             {movieScore}%
           </div>
         </div>
@@ -153,7 +153,7 @@ function EmptyState({ title, note }: { title: string; note: string }) {
   return (
     <div className="grid min-h-[300px] place-items-center border border-ink bg-paper text-center">
       <div className="max-w-[640px] p-10">
-        <h3 className="text-[clamp(44px,8vw,110px)] uppercase leading-[0.78] tracking-[-0.09em]">
+        <h3 className="overflow-hidden text-[clamp(44px,8vw,110px)] uppercase leading-[0.78] tracking-[-0.09em]">
           {title}
         </h3>
         <p className="mx-auto mt-6 max-w-[520px] text-[17px] leading-[1.35] text-muted">

@@ -142,10 +142,11 @@ export function BlendPageClient({ slug }: { slug: string }) {
           />
         </div>
 
-        <div className="mt-8 border border-ink bg-paper p-5">
-          <label>Share this link</label>
+        <div className="relative z-10 mt-8 border border-ink bg-paper p-5">
+          <label htmlFor={`share-${slug}`}>Share this link</label>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <input
+              id={`share-${slug}`}
               readOnly
               value={blend.shareUrl}
               className="flex-1 border border-ink bg-paper2 px-4 py-2.5 text-sm text-ink"

@@ -11,6 +11,16 @@ function letterboxdUrl(film: RecommendedFilm): string {
     : `https://letterboxd.com/search/${encodeURIComponent(film.title)}/`;
 }
 
+function selectRecommendation(
+  event: React.KeyboardEvent<HTMLDivElement>,
+  onSelect: () => void,
+) {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    onSelect();
+  }
+}
+
 export function RecommendationDeck({
   films,
   emptyMessage,
@@ -39,11 +49,14 @@ export function RecommendationDeck({
           const active = i === index;
           const poster = posterUrl(film.posterPath);
           return (
-            <button
+            <div
               key={`${film.slug}-${film.tmdbId ?? i}`}
-              type="button"
+              role="button"
+              tabIndex={0}
+              aria-pressed={active}
               onClick={() => setIndex(i)}
-              className={`grid w-full grid-cols-[56px_1fr_58px] items-center gap-4 border-b border-ink p-3.5 text-left transition-colors duration-150 sm:grid-cols-[72px_1fr_74px] ${
+              onKeyDown={(event) => selectRecommendation(event, () => setIndex(i))}
+              className={`grid w-full cursor-pointer grid-cols-[56px_1fr_58px] items-center gap-4 border-b border-ink p-3.5 text-left transition-colors duration-150 sm:grid-cols-[72px_1fr_74px] ${
                 active ? "bg-ink text-paper" : "bg-paper text-ink hover:bg-ink hover:text-paper"
               }`}
             >
@@ -53,23 +66,23 @@ export function RecommendationDeck({
                   <img
                     src={poster}
                     alt={film.title}
-                    className="h-full w-full object-cover"
+                    className="pointer-events-none h-full w-full object-cover"
                   />
                 ) : null}
               </div>
               <div className="min-w-0">
-                <h3 className="m-0 truncate text-[19px] leading-[0.96] tracking-[-0.055em] sm:text-2xl">
+                <div className="truncate text-[19px] leading-[0.96] tracking-[-0.055em] sm:text-2xl">
                   {film.title}
-                </h3>
-                <p className="mt-1.5 truncate text-[11px] uppercase leading-[1.25] tracking-[0.06em] opacity-60">
+                </div>
+                <div className="mt-1.5 truncate text-[11px] uppercase leading-[1.25] tracking-[0.06em] opacity-60">
                   {film.explanation.tasteSignals[0] ??
                     current.explanation.headline}
-                </p>
+                </div>
               </div>
               <div className="border border-current px-2 py-2 text-center text-[15px] tracking-[-0.04em]">
                 {film.matchScore}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -96,7 +109,7 @@ export function RecommendationDeck({
               <div className="kicker">
                 Recommended · {current.year ?? "—"}
               </div>
-              <h3 className="mt-2 text-[clamp(40px,6vw,80px)] uppercase leading-[0.8] tracking-[-0.085em]">
+              <h3 className="mt-2 overflow-hidden text-[clamp(40px,6vw,80px)] uppercase leading-[0.8] tracking-[-0.085em]">
                 {current.title}
               </h3>
               <p className="mt-4 max-w-[48ch] text-[15px] leading-[1.42] text-muted">
@@ -120,7 +133,7 @@ export function RecommendationDeck({
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-1 border-t border-ink sm:grid-cols-2">
+        <div className="relative z-10 grid grid-cols-1 border-t border-ink sm:grid-cols-2">
           <button
             type="button"
             onClick={() => setIndex((prev) => (prev + 1) % films.length)}

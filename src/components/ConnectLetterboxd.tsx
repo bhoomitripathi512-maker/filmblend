@@ -48,10 +48,12 @@ export function ConnectLetterboxd({
     }
   }
 
+  const inputId = `letterboxd-${slug}-slot-${slot}`;
+
   if (success) {
     return (
       <div className="border border-ink bg-cream p-5">
-        <label className="m-0">{label}</label>
+        <p className="m-0 text-xs uppercase tracking-[0.08em] text-muted">{label}</p>
         <p className="mt-2 text-3xl tracking-[-0.05em] text-ink">@{username}</p>
         <p className="mt-2 text-sm text-green">Connected and synced</p>
         <button
@@ -67,14 +69,15 @@ export function ConnectLetterboxd({
   }
 
   return (
-    <form onSubmit={handleConnect} className="border border-ink bg-paper p-5">
-      <label>{label}</label>
+    <form onSubmit={handleConnect} className="relative z-10 border border-ink bg-paper p-5">
+      <label htmlFor={inputId}>{label}</label>
       <p className="mt-1 text-[13px] leading-[1.35] text-muted">
         Enter your public Letterboxd username. Your watchlist and watched films
         must be public.
       </p>
       <div className="mt-5">
         <input
+          id={inputId}
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
