@@ -276,8 +276,13 @@ async function fetchAllPages(
   const allFilms = parseFilmsFromHtml(firstHtml);
 
   for (let page = 2; page <= pageCount; page += 1) {
-    const html = await fetchHtml(`${normalizedPath}page/${page}/`);
-    allFilms.push(...parseFilmsFromHtml(html));
+    try {
+      const html = await fetchHtml(`${normalizedPath}page/${page}/`);
+      allFilms.push(...parseFilmsFromHtml(html));
+    } catch {
+      // Letterboxd often blocks paginated /films/ requests; keep page 1 data.
+      break;
+    }
   }
 
   const unique = new Map<string, LetterboxdFilm>();
@@ -470,19 +475,33 @@ async function syncLetterboxdUserFromHtml(username: string) {
   }
 
   let rated = filmsRated;
-  if (rated.length === 0) {
-    try {
-      const rss = await fetchUserFromRss(profile.username);
+  let watched = filmsWatched;
+
+  try {
+    const rss = await fetchUserFromRss(profile.username);
+
+    if (rated.length === 0) {
       rated = rss.filmsRated;
-    } catch {
-      // RSS supplement is optional.
     }
+
+    if (watched.length === 0) {
+      watched = rss.filmsWatched;
+    } else {
+      const seen = new Set(watched.map((film) => film.slug));
+      for (const film of rss.filmsWatched) {
+        if (!seen.has(film.slug)) {
+          watched.push(film);
+        }
+      }
+    }
+  } catch {
+    // RSS supplement is optional.
   }
 
   return {
     ...profile,
     filmsWatchlist,
-    filmsWatched,
+    filmsWatched: watched,
     filmsRated: rated,
     genreStats,
     directorStats,
