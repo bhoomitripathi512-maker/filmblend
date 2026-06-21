@@ -67,14 +67,23 @@ async function fetchHtml(path: string): Promise<string> {
         throw new LetterboxdError("User not found or profile is private", 404);
       }
 
+      const text = await response.text();
+
       if (!response.ok) {
+        if (response.status === 403 && isCloudflareChallengeHtml(text)) {
+          console.warn(
+            "Letterboxd proxy blocked by Cloudflare, falling back to direct scraping:",
+            url,
+          );
+          return fetchHtmlDirect(url);
+        }
+
         throw new LetterboxdError(
           `Letterboxd request failed (${response.status})`,
           response.status,
         );
       }
 
-      const text = await response.text();
       if (isCloudflareChallengeHtml(text)) {
         console.warn(
           "Letterboxd proxy returned Cloudflare challenge, falling back to direct scraping:",
