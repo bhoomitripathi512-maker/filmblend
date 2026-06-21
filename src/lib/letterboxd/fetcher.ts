@@ -368,20 +368,41 @@ export async function fetchUserWatchedFilmsWithRatings(username: string): Promis
   const allRated: RatedFilm[] = [];
   const pagesFetched: number[] = [];
 
-  for (let page = 1; page <= WATCHED_FILMS_MAX_PAGES; page += 1) {
-    const path = watchedFilmsPagePath(normalized, page);
-    try {
-      const html = await fetchHtml(path);
-      pagesFetched.push(page);
-      allFilms.push(...parseFilmsFromHtml(html));
-      allRated.push(...parseRatedFilmsFromHtml(html));
-    } catch (error) {
+  const pageResults = await Promise.all(
+    Array.from({ length: WATCHED_FILMS_MAX_PAGES }, (_, index) => {
+      const page = index + 1;
+      const path = watchedFilmsPagePath(normalized, page);
+      return fetchHtml(path)
+        .then((html) => ({
+          page,
+          films: parseFilmsFromHtml(html),
+          ratings: parseRatedFilmsFromHtml(html),
+          error: null as string | null,
+        }))
+        .catch((error: unknown) => ({
+          page,
+          films: [] as LetterboxdFilm[],
+          ratings: [] as RatedFilm[],
+          error: error instanceof Error ? error.message : String(error),
+        }));
+    }),
+  );
+
+  for (const result of pageResults) {
+    if (result.error) {
       console.warn(
-        `Letterboxd watched films page ${page} failed for ${normalized}:`,
-        error instanceof Error ? error.message : error,
+        `Letterboxd watched films page ${result.page} failed for ${normalized}:`,
+        result.error,
       );
+      continue;
     }
+
+    pagesFetched.push(result.page);
+    allFilms.push(...result.films);
+    allRated.push(...result.ratings);
   }
+
+  pagesFetched.sort((a, b) => a - b);
 
   return {
     films: dedupeFilms(allFilms),
