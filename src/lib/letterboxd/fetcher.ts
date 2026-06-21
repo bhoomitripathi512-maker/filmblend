@@ -1,5 +1,4 @@
 import * as cheerio from "cheerio";
-import { gotScraping } from "got-scraping";
 import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types/blend";
 
 const BASE_URL = "https://letterboxd.com";
@@ -16,6 +15,7 @@ const BROWSER_HEADERS = {
 
 async function fetchHtml(path: string): Promise<string> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
+  const { gotScraping } = await import("got-scraping");
 
   try {
     const response = await gotScraping({

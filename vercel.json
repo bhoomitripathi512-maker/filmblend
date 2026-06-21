@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "src/app/api/blends/[slug]/connect/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/blends/[slug]/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
