@@ -57,7 +57,10 @@ export async function POST(
     if (err instanceof LetterboxdError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }
-    throw err;
+    console.error("Letterboxd sync error:", err);
+    const message =
+      err instanceof Error ? err.message : "Failed to sync Letterboxd profile";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   const { data: existingSlot } = await supabase

@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { fetchUserFromRss } from "@/lib/letterboxd/rss";
 import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types/blend";
 
 const BASE_URL = "https://letterboxd.com";
@@ -333,6 +334,47 @@ export async function fetchUserDirectorStats(
 }
 
 export async function syncLetterboxdUser(username: string) {
+  const normalized = username.trim().toLowerCase().replace(/^@/, "");
+
+  try {
+    return await syncLetterboxdUserFromHtml(normalized);
+  } catch (htmlError) {
+    console.error("HTML Letterboxd sync failed, using RSS fallback:", htmlError);
+
+    try {
+      const rss = await fetchUserFromRss(normalized);
+      let filmsWatchlist: LetterboxdFilm[] = [];
+
+      try {
+        filmsWatchlist = await fetchUserWatchlist(normalized);
+      } catch {
+        // Watchlist HTML may be blocked even when RSS works.
+      }
+
+      return {
+        username: rss.username,
+        displayName: rss.displayName,
+        avatarUrl: null,
+        filmsWatchlist,
+        filmsWatched: rss.filmsWatched,
+        filmsRated: rss.filmsRated,
+        genreStats: [],
+        directorStats: [],
+        syncedAt: new Date().toISOString(),
+      };
+    } catch (rssError) {
+      if (htmlError instanceof LetterboxdError) throw htmlError;
+      throw new LetterboxdError(
+        rssError instanceof Error
+          ? rssError.message
+          : "Could not sync Letterboxd profile",
+        502,
+      );
+    }
+  }
+}
+
+async function syncLetterboxdUserFromHtml(username: string) {
   const profile = await verifyLetterboxdUser(username);
 
   const [filmsWatchlist, filmsWatched, filmsRated, genreStats, directorStats] =
