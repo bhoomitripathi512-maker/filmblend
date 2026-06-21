@@ -1,4 +1,5 @@
 import type { LetterboxdFilm, RatedFilm } from "@/types/blend";
+import { fetchWithProxyFallback } from "@/lib/letterboxd/request";
 
 const BASE_URL = "https://letterboxd.com";
 
@@ -44,19 +45,10 @@ function parseRssFilms(xml: string): RatedFilm[] {
 
 async function fetchRss(path: string): Promise<string> {
   const url = `${BASE_URL}${path}`;
-  const proxyBase = process.env.LETTERBOXD_PROXY_URL?.replace(/\/$/, "");
+  const accept =
+    "application/rss+xml, application/xml, text/xml, */*";
 
-  const response = proxyBase
-    ? await fetch(`${proxyBase}?url=${encodeURIComponent(url)}`, {
-        cache: "no-store",
-      })
-    : await fetch(url, {
-        headers: {
-          Accept: "application/rss+xml, application/xml, text/xml, */*",
-          "User-Agent": "Filmblend/1.0 (+https://filmblend.vercel.app)",
-        },
-        cache: "no-store",
-      });
+  const response = await fetchWithProxyFallback(url, accept);
 
   if (response.status === 404) {
     throw new Error("User not found");

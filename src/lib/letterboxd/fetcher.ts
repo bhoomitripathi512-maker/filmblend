@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { fetchViaProxy, isNetworkFetchError, letterboxdProxyBase } from "@/lib/letterboxd/request";
 import { fetchUserFromRss, fetchWatchlistFromRss } from "@/lib/letterboxd/rss";
 import { uniqueFilms } from "@/lib/blend/matching";
 import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types/blend";
@@ -41,28 +42,43 @@ const BROWSER_HEADERS = {
 
 async function fetchHtml(path: string): Promise<string> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
-  const proxyBase = process.env.LETTERBOXD_PROXY_URL?.replace(/\/$/, "");
+  const proxyBase = letterboxdProxyBase();
 
   if (proxyBase) {
-    const response = await fetch(
-      `${proxyBase}?url=${encodeURIComponent(url)}`,
-      { cache: "no-store" },
-    );
+    try {
+      const response = await fetchViaProxy(
+        proxyBase,
+        url,
+        { headers: { Accept: "text/html,application/xhtml+xml,*/*" } },
+      );
 
-    if (response.status === 404) {
-      throw new LetterboxdError("User not found or profile is private", 404);
-    }
+      if (response.status === 404) {
+        throw new LetterboxdError("User not found or profile is private", 404);
+      }
 
-    if (!response.ok) {
-      throw new LetterboxdError(
-        `Letterboxd request failed (${response.status})`,
-        response.status,
+      if (!response.ok) {
+        throw new LetterboxdError(
+          `Letterboxd request failed (${response.status})`,
+          response.status,
+        );
+      }
+
+      return response.text();
+    } catch (error) {
+      if (error instanceof LetterboxdError) throw error;
+      if (!isNetworkFetchError(error)) throw error;
+
+      console.warn(
+        "Letterboxd proxy unavailable, falling back to direct scraping:",
+        error instanceof Error ? error.message : error,
       );
     }
-
-    return response.text();
   }
 
+  return fetchHtmlDirect(url);
+}
+
+async function fetchHtmlDirect(url: string): Promise<string> {
   await ensureHeaderGeneratorData();
   const { gotScraping } = await import("got-scraping");
 
@@ -500,10 +516,12 @@ export async function syncLetterboxdUser(username: string) {
       };
     } catch (rssError) {
       if (htmlError instanceof LetterboxdError) throw htmlError;
+      const message =
+        rssError instanceof Error ? rssError.message : "Could not sync Letterboxd profile";
       throw new LetterboxdError(
-        rssError instanceof Error
-          ? rssError.message
-          : "Could not sync Letterboxd profile",
+        isNetworkFetchError(rssError) || message === "fetch failed"
+          ? "Could not reach Letterboxd. The proxy may be down — please try again in a moment."
+          : message,
         502,
       );
     }
