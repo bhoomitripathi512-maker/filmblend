@@ -63,8 +63,10 @@ export function BlendPageClient({ slug }: { slug: string }) {
 
   if (error || !blend) {
     return (
-      <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-center">
-        <p className="text-red-300">{error ?? "Blend not found"}</p>
+      <div className="px-6 py-16">
+        <div className="mx-auto max-w-xl border border-ink bg-paper2 p-6 text-center">
+          <p className="text-ink">{error ?? "Blend not found"}</p>
+        </div>
       </div>
     );
   }
@@ -73,22 +75,56 @@ export function BlendPageClient({ slug }: { slug: string }) {
   const p2 = blend.participants.find((p) => p.slot === 2);
   const isComplete = blend.participants.length === 2 && blend.results;
 
-  return (
-    <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
-      <div className="text-center">
-        <p className="eyebrow text-sm font-semibold text-lb-green">Film Blend</p>
-        <h1 className="mt-2 text-3xl font-bold text-lb-white">
-          {isComplete ? "Your blend is ready" : "Connect Letterboxd"}
-        </h1>
-        {!isComplete && (
-          <p className="mt-3 text-lb-fog">
-            Both people need to connect their Letterboxd accounts to see your
-            shared taste.
-          </p>
-        )}
+  if (isComplete && blend.results) {
+    return (
+      <div>
+        <BlendResultsView
+          results={blend.results}
+          participants={blend.participants}
+        />
+        <section className="border-t border-ink px-6 py-8 sm:px-10">
+          <div className="kicker">Refresh data</div>
+          <h3 className="mt-2 text-3xl uppercase leading-[0.9] tracking-[-0.06em]">
+            Re-sync profiles
+          </h3>
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <ConnectLetterboxd
+              slot={1}
+              slug={slug}
+              label="Person 1"
+              existingUsername={p1?.letterboxdUsername}
+              onConnected={refresh}
+            />
+            <ConnectLetterboxd
+              slot={2}
+              slug={slug}
+              label="Person 2"
+              existingUsername={p2?.letterboxdUsername}
+              onConnected={refresh}
+            />
+          </div>
+        </section>
       </div>
+    );
+  }
 
-      {!isComplete && (
+  return (
+    <section className="grid min-h-[calc(100vh-64px)] grid-cols-1 border-b border-ink lg:grid-cols-[minmax(250px,330px)_1fr]">
+      <aside className="flex flex-col justify-between gap-8 border-b border-ink bg-paper2/45 px-7 py-8 lg:border-b-0 lg:border-r">
+        <div>
+          <div className="kicker">Connect Letterboxd</div>
+          <h2 className="mt-3 text-2xl leading-[0.96] tracking-[-0.06em]">
+            Both people connect to reveal the blend.
+          </h2>
+          <p className="mt-3.5 max-w-[31ch] text-[15px] leading-[1.45] text-muted">
+            Each person enters their public Letterboxd handle. Share the link so
+            the second person can join from any device.
+          </p>
+        </div>
+        <div className="kicker">Screen 02 / Connect</div>
+      </aside>
+
+      <div className="p-6 sm:p-10">
         <div className="grid gap-4 md:grid-cols-2">
           <ConnectLetterboxd
             slot={1}
@@ -105,50 +141,25 @@ export function BlendPageClient({ slug }: { slug: string }) {
             onConnected={refresh}
           />
         </div>
-      )}
 
-      {isComplete && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <ConnectLetterboxd
-            slot={1}
-            slug={slug}
-            label="Person 1"
-            existingUsername={p1?.letterboxdUsername}
-            onConnected={refresh}
-          />
-          <ConnectLetterboxd
-            slot={2}
-            slug={slug}
-            label="Person 2"
-            existingUsername={p2?.letterboxdUsername}
-            onConnected={refresh}
-          />
-        </div>
-      )}
-
-      {!isComplete && (
-        <div className="rounded-xl border border-lb-graphite bg-lb-carbon p-5">
-          <p className="text-sm font-medium text-lb-pewter">Share this link</p>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-8 border border-ink bg-paper p-5">
+          <label>Share this link</label>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <input
               readOnly
               value={blend.shareUrl}
-              className="flex-1 rounded-lg border border-lb-graphite bg-lb-void px-4 py-2 text-sm text-lb-pewter"
+              className="flex-1 border border-ink bg-paper2 px-4 py-2.5 text-sm text-ink"
             />
             <button
               type="button"
               onClick={() => navigator.clipboard.writeText(blend.shareUrl)}
-              className="rounded-lg border border-lb-graphite px-4 py-2 text-sm text-lb-white hover:border-lb-fog"
+              className="btn"
             >
               Copy link
             </button>
           </div>
         </div>
-      )}
-
-      {isComplete && blend.results && (
-        <BlendResultsView results={blend.results} participants={blend.participants} />
-      )}
-    </div>
+      </div>
+    </section>
   );
 }

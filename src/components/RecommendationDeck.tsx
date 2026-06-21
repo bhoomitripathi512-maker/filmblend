@@ -1,8 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { posterUrl } from "@/lib/tmdb/client";
 import type { RecommendedFilm } from "@/types/blend";
+
+function letterboxdUrl(film: RecommendedFilm): string {
+  const slug = film.slug.startsWith("tmdb-") ? null : film.slug;
+  return slug
+    ? `https://letterboxd.com/film/${slug}/`
+    : `https://letterboxd.com/search/${encodeURIComponent(film.title)}/`;
+}
 
 export function RecommendationDeck({
   films,
@@ -13,126 +20,124 @@ export function RecommendationDeck({
 }) {
   const [index, setIndex] = useState(0);
 
-  const current = films[index];
-
-  const goNext = useCallback(() => {
-    if (films.length === 0) return;
-    setIndex((prev) => (prev + 1) % films.length);
-  }, [films.length]);
-
-  const goPrev = useCallback(() => {
-    if (films.length === 0) return;
-    setIndex((prev) => (prev - 1 + films.length) % films.length);
-  }, [films.length]);
-
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "ArrowRight") goNext();
-      if (event.key === "ArrowLeft") goPrev();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [goNext, goPrev]);
-
   if (films.length === 0) {
-    return <p className="text-sm text-lb-fog">{emptyMessage}</p>;
+    return <p className="text-sm text-muted">{emptyMessage}</p>;
   }
 
-  if (!current) return null;
-
-  const poster = posterUrl(current.posterPath, "w500");
+  const current = films[Math.min(index, films.length - 1)];
+  const detailPoster = posterUrl(current.posterPath, "w500");
+  const signals = [
+    ...current.explanation.tasteSignals,
+    ...current.explanation.tmdbSignals,
+  ].slice(0, 3);
 
   return (
-    <div className="space-y-6">
-      <div className="overflow-hidden rounded-2xl border border-lb-graphite bg-lb-carbon">
-        <div className="grid gap-0 md:grid-cols-[minmax(0,280px)_1fr]">
-          <div className="relative aspect-[2/3] bg-lb-void md:aspect-auto md:min-h-[420px]">
-            {poster ? (
+    <div className="grid min-h-[600px] grid-cols-1 gap-px border border-ink bg-ink lg:grid-cols-[1.1fr_0.9fr]">
+      {/* Master list */}
+      <div className="max-h-[640px] overflow-auto bg-paper">
+        {films.map((film, i) => {
+          const active = i === index;
+          const poster = posterUrl(film.posterPath);
+          return (
+            <button
+              key={`${film.slug}-${film.tmdbId ?? i}`}
+              type="button"
+              onClick={() => setIndex(i)}
+              className={`grid w-full grid-cols-[56px_1fr_58px] items-center gap-4 border-b border-ink p-3.5 text-left transition-colors duration-150 sm:grid-cols-[72px_1fr_74px] ${
+                active ? "bg-ink text-paper" : "bg-paper text-ink hover:bg-ink hover:text-paper"
+              }`}
+            >
+              <div className="aspect-[72/98] w-full overflow-hidden border border-current bg-ink/20">
+                {poster ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={poster}
+                    alt={film.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : null}
+              </div>
+              <div className="min-w-0">
+                <h3 className="m-0 truncate text-[19px] leading-[0.96] tracking-[-0.055em] sm:text-2xl">
+                  {film.title}
+                </h3>
+                <p className="mt-1.5 truncate text-[11px] uppercase leading-[1.25] tracking-[0.06em] opacity-60">
+                  {film.explanation.tasteSignals[0] ??
+                    current.explanation.headline}
+                </p>
+              </div>
+              <div className="border border-current px-2 py-2 text-center text-[15px] tracking-[-0.04em]">
+                {film.matchScore}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Detail pane */}
+      <aside className="grid grid-rows-[1fr_auto] bg-paper">
+        <div className="grid grid-cols-1 gap-6 p-6 sm:grid-cols-[0.82fr_1fr]">
+          <div className="min-h-[300px] border border-ink bg-ink sm:min-h-[470px]">
+            {detailPoster ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={poster}
+                src={detailPoster}
                 alt={current.title}
                 className="h-full w-full object-cover"
               />
             ) : (
-              <div className="flex h-full min-h-[320px] items-center justify-center p-6 text-center text-lb-fog">
+              <div className="flex h-full items-center justify-center p-6 text-center text-paper/70">
                 {current.title}
               </div>
             )}
-            <span className="absolute right-3 top-3 rounded-full bg-lb-green px-3 py-1 text-xs font-bold text-lb-void">
-              {current.matchScore}% match
-            </span>
           </div>
-
-          <div className="flex flex-col justify-between p-6 md:p-8">
+          <div className="flex flex-col justify-between gap-5">
             <div>
-              <p className="eyebrow text-xs font-semibold text-lb-green">
-                {current.explanation.headline}
-              </p>
-              <h4 className="mt-3 text-2xl font-bold text-lb-white">
+              <div className="kicker">
+                Recommended · {current.year ?? "—"}
+              </div>
+              <h3 className="mt-2 text-[clamp(40px,6vw,80px)] uppercase leading-[0.8] tracking-[-0.085em]">
                 {current.title}
-                {current.year ? (
-                  <span className="ml-2 text-lg font-normal text-lb-fog">
-                    {current.year}
-                  </span>
-                ) : null}
-              </h4>
-              <p className="mt-4 text-sm leading-relaxed text-lb-pewter">
+              </h3>
+              <p className="mt-4 max-w-[48ch] text-[15px] leading-[1.42] text-muted">
                 {current.explanation.summary}
               </p>
-
-              {current.explanation.tasteSignals.length > 0 && (
-                <div className="mt-5">
-                  <p className="eyebrow text-[10px] text-lb-fog">Taste signals</p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {current.explanation.tasteSignals.map((signal) => (
-                      <span
-                        key={signal}
-                        className="rounded-full border border-lb-graphite px-3 py-1 text-xs text-lb-pewter"
-                      >
-                        {signal}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {current.explanation.tmdbSignals.length > 0 && (
-                <div className="mt-4">
-                  <p className="eyebrow text-[10px] text-lb-fog">Why TMDB picked this</p>
-                  <ul className="mt-2 space-y-1 text-xs text-lb-fog">
-                    {current.explanation.tmdbSignals.map((signal) => (
-                      <li key={signal}>· {signal}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
-
-            <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-              <p className="text-xs text-lb-fog">
-                Pick {index + 1} of {films.length}
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={goPrev}
-                  className="rounded-lg border border-lb-graphite px-4 py-2 text-sm text-lb-pewter transition hover:border-lb-fog hover:text-lb-white"
-                >
-                  Previous
-                </button>
-                <button
-                  type="button"
-                  onClick={goNext}
-                  className="rounded-lg bg-lb-green px-5 py-2 text-sm font-semibold text-lb-void transition hover:bg-lb-green-dim"
-                >
-                  Try another pick
-                </button>
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-5 border-t border-ink pt-2.5 text-xs uppercase tracking-[0.08em]">
+                <span>Match score</span>
+                <strong>{current.matchScore}%</strong>
               </div>
+              {signals.map((signal, i) => (
+                <div
+                  key={signal}
+                  className="flex items-center justify-between gap-5 border-t border-ink pt-2.5 text-xs uppercase tracking-[0.08em]"
+                >
+                  <span className="text-muted">{signal}</span>
+                  <strong>{i === 0 ? "Signal" : "Why"}</strong>
+                </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
+        <div className="grid grid-cols-1 border-t border-ink sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setIndex((prev) => (prev + 1) % films.length)}
+            className="h-[58px] border-b border-ink text-xs uppercase tracking-[0.08em] transition-colors hover:bg-ink hover:text-paper sm:border-b-0 sm:border-r"
+          >
+            Not this mood
+          </button>
+          <a
+            href={letterboxdUrl(current)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex h-[58px] items-center justify-center text-xs uppercase tracking-[0.08em] transition-colors hover:bg-ink hover:text-paper"
+          >
+            Open in Letterboxd
+          </a>
+        </div>
+      </aside>
     </div>
   );
 }

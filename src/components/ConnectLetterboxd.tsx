@@ -50,15 +50,15 @@ export function ConnectLetterboxd({
 
   if (success) {
     return (
-      <div className="rounded-xl border border-lb-green/40 bg-lb-carbon p-5">
-        <p className="text-sm font-medium text-lb-green">{label}</p>
-        <p className="mt-1 text-lg font-semibold text-lb-white">@{username}</p>
-        <p className="mt-2 text-sm text-lb-fog">Connected and synced</p>
+      <div className="border border-ink bg-cream p-5">
+        <label className="m-0">{label}</label>
+        <p className="mt-2 text-3xl tracking-[-0.05em] text-ink">@{username}</p>
+        <p className="mt-2 text-sm text-green">Connected and synced</p>
         <button
           type="button"
           onClick={() => handleConnect()}
           disabled={loading}
-          className="mt-4 text-sm text-lb-green underline-offset-2 hover:underline disabled:opacity-50"
+          className="mt-4 text-xs uppercase tracking-[0.08em] text-green underline-offset-2 hover:underline disabled:opacity-50"
         >
           {loading ? "Re-syncing…" : "Re-sync Letterboxd"}
         </button>
@@ -67,34 +67,37 @@ export function ConnectLetterboxd({
   }
 
   return (
-    <form
-      onSubmit={handleConnect}
-      className="rounded-xl border border-lb-graphite bg-lb-carbon p-5"
-    >
-      <p className="text-sm font-medium text-lb-pewter">{label}</p>
-      <p className="mt-1 text-xs text-lb-fog">
+    <form onSubmit={handleConnect} className="border border-ink bg-paper p-5">
+      <label>{label}</label>
+      <p className="mt-1 text-[13px] leading-[1.35] text-muted">
         Enter your public Letterboxd username. Your watchlist and watched films
         must be public.
       </p>
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+      <div className="mt-5">
         <input
           type="text"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
-          placeholder="letterboxd username"
-          className="flex-1 rounded-lg border border-lb-graphite bg-lb-void px-4 py-3 text-lb-white placeholder:text-lb-graphite focus:border-lb-green focus:outline-none"
+          placeholder="username"
+          className="w-full border-0 border-b border-ink bg-transparent pb-2.5 pt-3 text-2xl tracking-[-0.045em] text-ink outline-none placeholder:text-soft"
           required
           disabled={loading}
         />
+      </div>
+      <div className="mt-5 flex items-center justify-end">
         <button
           type="submit"
           disabled={loading || !username.trim()}
-          className="rounded-lg bg-lb-green px-5 py-3 font-semibold text-lb-void transition hover:bg-lb-green-dim disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn fill"
         >
           {loading ? "Syncing…" : "Connect"}
         </button>
       </div>
-      {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+      {error && (
+        <p className="mt-3 border border-ink bg-paper2 px-3 py-2 text-[13px] text-muted">
+          {error}
+        </p>
+      )}
     </form>
   );
 }

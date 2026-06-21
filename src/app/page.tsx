@@ -28,65 +28,81 @@ export default function HomePage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col justify-center px-6 py-16">
-      <div className="text-center">
-        <p className="eyebrow text-sm font-semibold text-lb-green">Filmblend</p>
-        <h1 className="mt-4 text-4xl font-bold tracking-tight text-lb-white sm:text-5xl">
-          Your Letterboxd taste, blended
-        </h1>
-        <p className="mx-auto mt-5 max-w-xl text-lg text-lb-fog">
-          Create a blend link, send it to a friend, connect your Letterboxd
-          profiles, and discover shared movies, genres, and what to watch
-          together.
-        </p>
-      </div>
-
-      <div className="mt-12 space-y-6">
-        <div className="grid gap-4 sm:grid-cols-3">
-          {[
-            {
-              title: "Shared Watchlist",
-              desc: "Films on both watchlists — pick what to watch tonight",
-            },
-            {
-              title: "Taste Match",
-              desc: "Rating-weighted genres, directors, and mutual favorites",
-            },
-            {
-              title: "Smart Picks",
-              desc: "One perfect recommendation at a time — shuffle for more",
-            },
-          ].map((item) => (
-            <div
-              key={item.title}
-              className="rounded-xl border border-lb-graphite bg-lb-carbon p-5"
-            >
-              <h3 className="font-semibold text-lb-white">{item.title}</h3>
-              <p className="mt-2 text-sm text-lb-fog">{item.desc}</p>
-            </div>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={createBlend}
-          disabled={loading}
-          className="w-full rounded-xl bg-lb-green py-4 text-lg font-semibold text-lb-void transition hover:bg-lb-green-dim disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loading ? "Creating your blend…" : "Create a blend link"}
-        </button>
-
-        {error && (
-          <p className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-center text-sm text-red-300">
-            {error}
+    <section className="grid min-h-[calc(100vh-64px)] grid-cols-1 border-b border-ink lg:grid-cols-[minmax(250px,330px)_1fr]">
+      <aside className="flex flex-col justify-between gap-8 border-b border-ink bg-paper2/45 px-7 py-8 lg:border-b-0 lg:border-r">
+        <div>
+          <div className="kicker">Film matching for cinephiles</div>
+          <h2 className="mt-3 text-2xl leading-[0.96] tracking-[-0.06em]">
+            A quieter, cleaner way to compare taste.
+          </h2>
+          <p className="mt-3.5 max-w-[31ch] text-[15px] leading-[1.45] text-muted">
+            Fewer gimmicks, stronger hierarchy, and more room for the films to
+            breathe.
           </p>
-        )}
+        </div>
+        <div className="kicker">Screen 01 / Entry</div>
+      </aside>
 
-        <p className="text-center text-xs text-lb-fog">
-          Requires public Letterboxd profiles. Works on any device — your blends
-          are saved in the cloud.
-        </p>
+      <div className="relative overflow-hidden p-6 sm:p-10">
+        <div className="grid h-full items-stretch gap-10 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="flex flex-col">
+            <h1 className="m-0 text-[clamp(58px,10.8vw,140px)] uppercase leading-[0.79] tracking-[-0.085em]">
+              Find the film between two tastes.
+            </h1>
+            <p className="mt-7 max-w-[780px] text-[clamp(18px,2.1vw,28px)] leading-[1.03] tracking-[-0.04em]">
+              Enter two Letterboxd handles. Filmblend turns overlap, ratings,
+              watchlists, and hidden affinities into a curated double-feature
+              shortlist.
+            </p>
+            <div className="mt-7 flex flex-wrap gap-2.5">
+              <span className="pill green">Taste blend</span>
+              <span className="pill">Letterboxd import</span>
+              <span className="pill">Curated picks</span>
+            </div>
+
+            <div className="mt-9 max-w-[620px] border border-ink bg-paper p-5">
+              <p className="text-[15px] leading-[1.4] text-muted">
+                Create a blend link, send it to a friend, and connect your
+                Letterboxd profiles to reveal your shared cinematic taste.
+              </p>
+              <div className="mt-5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+                <span className="max-w-[34ch] text-[13px] leading-[1.35] text-muted">
+                  Works on any device. Your blends are saved in the cloud.
+                </span>
+                <button
+                  type="button"
+                  onClick={createBlend}
+                  disabled={loading}
+                  className="btn fill"
+                >
+                  {loading ? "Creating…" : "Create blend"}
+                </button>
+              </div>
+              {error && (
+                <p className="mt-4 border border-ink bg-paper2 px-3 py-2 text-[13px] text-muted">
+                  {error}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="relative hidden min-h-[600px] overflow-hidden border border-ink bg-ink lg:block">
+            <div className="absolute inset-0 bg-gradient-to-br from-green2 via-ink to-ink" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/65 to-black/10" />
+            <div className="absolute inset-x-6 bottom-6 z-[2] flex items-end justify-between gap-5 text-paper">
+              <div>
+                <h3 className="m-0 text-5xl uppercase leading-[0.88] tracking-[-0.065em]">
+                  Sentimental Value
+                </h3>
+                <p className="mt-2 text-[13px] uppercase tracking-[0.08em] opacity-80">
+                  Shared 5-star energy
+                </p>
+              </div>
+              <span className="pill border-paper text-paper">2025</span>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+    </section>
   );
 }

@@ -1,0 +1,128 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #f7f4ed;
+  --paper2: #eeebe3;
+  --ink: #11110f;
+  --muted: #67645d;
+  --soft: #d9d4c8;
+  --green: #007a5a;
+  --green2: #0a513d;
+  --cream: #fffaf0;
+  --star: #b8851a;
+  --radius: 3px;
+  --background: var(--paper);
+  --foreground: var(--ink);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-paper: var(--paper);
+  --color-paper2: var(--paper2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-soft: var(--soft);
+  --color-green: var(--green);
+  --color-green2: var(--green2);
+  --color-cream: var(--cream);
+  --color-star: var(--star);
+  --radius-editorial: var(--radius);
+  --font-sans:
+    "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+  letter-spacing: -0.02em;
+}
+
+input,
+button {
+  font: inherit;
+}
+
+::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* Uppercase tracked label */
+.kicker,
+.eyebrow {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* Editorial outline button */
+.btn {
+  height: 38px;
+  border: 1px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  padding: 0 16px;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn.fill {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btn.fill:hover {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+/* Editorial pill */
+.pill {
+  border: 1px solid var(--ink);
+  padding: 8px 11px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+}
+.pill.green {
+  background: var(--green);
+  color: #fff;
+  border-color: var(--green);
+}
+
+/* 3x3 dot mark */
+.mark {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+}
+.mark span {
+  background: var(--green);
+  border-radius: 50%;
+}
