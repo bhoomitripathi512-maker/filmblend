@@ -1,33 +1,68 @@
 import * as cheerio from "cheerio";
+import { gotScraping } from "got-scraping";
 import type { DirectorStat, GenreStat, LetterboxdFilm, RatedFilm } from "@/types/blend";
 
 const BASE_URL = "https://letterboxd.com";
-const FETCH_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  Accept: "text/html,application/xhtml+xml",
-  "Accept-Language": "en-US,en;q=0.9",
-};
 
 async function fetchHtml(path: string): Promise<string> {
   const url = path.startsWith("http") ? path : `${BASE_URL}${path}`;
-  const response = await fetch(url, {
-    headers: FETCH_HEADERS,
-    next: { revalidate: 3600 },
-  });
 
-  if (response.status === 404) {
-    throw new LetterboxdError("User not found or profile is private", 404);
-  }
+  try {
+    const response = await gotScraping({
+      url,
+      headerGeneratorOptions: {
+        browsers: [{ name: "chrome", minVersion: 120 }],
+        devices: ["desktop"],
+        locales: ["en-US"],
+        operatingSystems: ["macos"],
+      },
+      retry: { limit: 2 },
+      timeout: { request: 25_000 },
+    });
 
-  if (!response.ok) {
+    if (response.statusCode === 404) {
+      throw new LetterboxdError("User not found or profile is private", 404);
+    }
+
+    if (response.statusCode !== 200) {
+      throw new LetterboxdError(
+        `Letterboxd request failed (${response.statusCode})`,
+        response.statusCode,
+      );
+    }
+
+    return response.body;
+  } catch (error) {
+    if (error instanceof LetterboxdError) throw error;
+
+    const statusCode =
+      error &&
+      typeof error === "object" &&
+      "response" in error &&
+      error.response &&
+      typeof error.response === "object" &&
+      "statusCode" in error.response
+        ? (error.response.statusCode as number)
+        : 0;
+
+    if (statusCode === 404) {
+      throw new LetterboxdError("User not found or profile is private", 404);
+    }
+
+    if (statusCode === 403) {
+      throw new LetterboxdError(
+        "Letterboxd blocked the request. Make sure your profile and watchlist are public, then try again.",
+        403,
+      );
+    }
+
     throw new LetterboxdError(
-      `Letterboxd request failed (${response.status})`,
-      response.status,
+      statusCode
+        ? `Letterboxd request failed (${statusCode})`
+        : "Could not reach Letterboxd. Please try again.",
+      statusCode || 502,
     );
   }
-
-  return response.text();
 }
 
 export class LetterboxdError extends Error {
@@ -236,7 +271,7 @@ export async function fetchUserGenreStats(
   username: string,
 ): Promise<GenreStat[]> {
   const normalized = username.trim().toLowerCase().replace(/^@/, "");
-  const html = await fetchHtml(`/${normalized}/films/genres/`);
+  const html = await fetchHtml(`/${normalized}/films/by/genre/`);
   const $ = cheerio.load(html);
   const stats: GenreStat[] = [];
 
@@ -270,7 +305,7 @@ export async function fetchUserDirectorStats(
   username: string,
 ): Promise<DirectorStat[]> {
   const normalized = username.trim().toLowerCase().replace(/^@/, "");
-  const html = await fetchHtml(`/${normalized}/films/directors/`);
+  const html = await fetchHtml(`/${normalized}/films/by/director/`);
   const $ = cheerio.load(html);
   const stats: DirectorStat[] = [];
 
