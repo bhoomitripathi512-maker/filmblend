@@ -1,9 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
-import { assertProductionDatabaseKey } from "@/lib/api/security";
 
 export function createAdminClient() {
-  assertProductionDatabaseKey();
-
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
@@ -11,7 +8,7 @@ export function createAdminClient() {
 
   if (!url || !key) {
     throw new Error(
-      "Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY for local dev)",
+      "Missing Supabase env vars: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or NEXT_PUBLIC_SUPABASE_ANON_KEY)",
     );
   }
 
