@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { RECOMMENDATIONS_ALGO_VERSION } from "@/lib/blend/compute";
 import { applySecurityHeaders, parseBlendSlug } from "@/lib/api/security";
 import { createAdminClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { BlendResults, ParticipantData } from "@/types/blend";
@@ -110,7 +109,6 @@ export async function GET(
       const cached = blend.results_json as BlendResults | null;
       if (
         cached &&
-        cached.algoVersion === RECOMMENDATIONS_ALGO_VERSION &&
         isCacheValid(blend.results_computed_at as string | null, mapped)
       ) {
         results = cached;

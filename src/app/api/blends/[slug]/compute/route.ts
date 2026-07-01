@@ -114,8 +114,6 @@ export async function POST(
     const cached = (blend.results_json as BlendResults | null) ?? null;
     if (
       cached &&
-      cached.algoVersion === RECOMMENDATIONS_ALGO_VERSION &&
-      blend.results_computed_at &&
       isCacheValid(blend.results_computed_at as string, mapped)
     ) {
       return applySecurityHeaders(

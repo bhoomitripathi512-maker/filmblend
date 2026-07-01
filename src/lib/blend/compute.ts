@@ -81,13 +81,13 @@ export async function computeBlendResults(
   ).length;
 
   const [enrichedWatchedSample1, enrichedWatchedSample2] = await Promise.all([
-    enrichFilmsBatch(user1.filmsWatched.slice(0, 50)),
-    enrichFilmsBatch(user2.filmsWatched.slice(0, 50)),
+    enrichFilmsBatch(user1.filmsWatched.slice(0, 35)),
+    enrichFilmsBatch(user2.filmsWatched.slice(0, 35)),
   ]);
 
   const [commonWatched, commonWatchlist, tasteProfile] = await Promise.all([
-    enrichFilmsBatch(commonWatchedRaw.slice(0, 60)),
-    enrichFilmsBatch(commonWatchlistRaw.slice(0, 40)),
+    enrichFilmsBatch(commonWatchedRaw.slice(0, 40)),
+    enrichFilmsBatch(commonWatchlistRaw.slice(0, 25)),
     buildTasteProfile(user1, user2, {
       user1: enrichedWatchedSample1,
       user2: enrichedWatchedSample2,
@@ -100,7 +100,7 @@ export async function computeBlendResults(
     user2.filmsWatched,
     user2.filmsWatchlist,
   );
-  const seenTmdbIds = new Set(await resolveExcludeTmdbIds(seenFilms, 80));
+  const seenTmdbIds = new Set(await resolveExcludeTmdbIds(seenFilms, 50));
 
   const recommendations = await buildRecommendationBundle(
     user1,

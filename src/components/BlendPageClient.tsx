@@ -17,6 +17,7 @@ async function computeBlend(slug: string): Promise<Blend> {
   const response = await fetch(`/api/blends/${slug}/compute`, {
     method: "POST",
     cache: "no-store",
+    signal: AbortSignal.timeout(65_000),
   });
   return parseJsonResponse<Blend>(response);
 }
@@ -33,6 +34,11 @@ async function loadBlendWithResults(slug: string): Promise<Blend> {
       return await computeBlend(slug);
     } catch (error) {
       lastError = error;
+      if (error instanceof DOMException && error.name === "TimeoutError") {
+        throw new Error(
+          "This took too long to compute. Please refresh and try again.",
+        );
+      }
       if (attempt === 0) {
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }

@@ -30,9 +30,9 @@ export function BlendLoading({ done }: { done?: boolean }) {
 
     const progressTimer = window.setInterval(() => {
       setProgress((current) => {
-        if (current >= 90) return current;
-        const step = current < 50 ? 4 : current < 75 ? 2 : 1;
-        return Math.min(90, current + step);
+        if (current >= 97) return current;
+        const step = current < 50 ? 4 : current < 75 ? 2 : current < 90 ? 1 : 0.5;
+        return Math.min(97, current + step);
       });
     }, 800);
 
@@ -40,7 +40,7 @@ export function BlendLoading({ done }: { done?: boolean }) {
   }, [done]);
 
   const quote = QUOTES[quoteIndex];
-  const displayProgress = done ? 100 : progress;
+  const displayProgress = done ? 100 : Math.round(progress);
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center px-6 py-16">

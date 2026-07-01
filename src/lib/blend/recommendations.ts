@@ -3,7 +3,6 @@ import { normalizeTitle } from "@/lib/blend/matching";
 import { intersectRatedFilms, normalizePreferenceName } from "@/lib/blend/taste";
 import {
   discoverCriterionMovies,
-  discoverIndieMovies,
   discoverMovies,
   enrichFilmsBatch,
   getSimilarMovies,
@@ -32,9 +31,8 @@ import type {
 const HIGH_RATING_THRESHOLD = 4;
 const TARGET = 24;
 const RANK_POOL = 36;
-const BACKFILL_PAGE_BUDGET = 1;
-const SEED_LIMIT = 6;
-const SEED_POOL = 14;
+const SEED_LIMIT = 4;
+const SEED_POOL = 10;
 const SEED_BATCH_SIZE = 5;
 
 /** Boutique / festival / Criterion-scale titles on TMDB. */
@@ -172,7 +170,7 @@ function discoverGenresForBlend(
     ...tasteProfile.user1TopGenres.slice(0, 4),
     ...tasteProfile.user2TopGenres.slice(0, 4),
   ]);
-  return rotateSlice(pool, hash, Math.min(3, pool.length));
+  return rotateSlice(pool, hash, Math.min(2, pool.length));
 }
 
 function discoverDirectorsForBlend(
@@ -181,10 +179,10 @@ function discoverDirectorsForBlend(
 ): WeightedPreference[] {
   const pool = uniquePreferences([
     ...tasteProfile.sharedDirectorsRanked,
-    ...tasteProfile.user1TopDirectors.slice(0, 4),
-    ...tasteProfile.user2TopDirectors.slice(0, 4),
+    ...tasteProfile.user1TopDirectors.slice(0, 3),
+    ...tasteProfile.user2TopDirectors.slice(0, 3),
   ]);
-  return rotateSlice(pool, hash >> 3, Math.min(3, pool.length));
+  return rotateSlice(pool, hash >> 3, Math.min(1, pool.length));
 }
 
 function blendDiscoverPage(
@@ -670,7 +668,7 @@ async function expandFromSeeds(
 
     const similar = await getSimilarMovies(seed.film.tmdbId, excludeIds);
     const offset = hash % 4;
-    const window = similar.slice(offset, offset + 10);
+    const window = similar.slice(offset, offset + 6);
 
     for (const [index, rec] of window.entries()) {
       const recYear = rec.release_date
@@ -730,28 +728,16 @@ async function discoverArtHouseCatalog(
       if (!genreId) return;
 
       const page = discoverPage + genreIndex + (hash % 2);
-      const [criterionResults, indieResults] = await Promise.all([
-        discoverCriterionMovies({
-          genreIds: [genreId],
-          excludeIds,
-          page,
-        }),
-        discoverIndieMovies({
-          genreIds: [genreId],
-          excludeIds,
-          page: page + 1,
-        }),
-      ]);
+      const criterionResults = await discoverCriterionMovies({
+        genreIds: [genreId],
+        excludeIds,
+        page,
+      });
 
       const criterionSlice = rotateSlice(
         criterionResults,
         hash + genreIndex,
-        Math.min(5, criterionResults.length),
-      );
-      const indieSlice = rotateSlice(
-        indieResults,
-        (hash >> 2) + genreIndex,
-        Math.min(4, indieResults.length),
+        Math.min(4, criterionResults.length),
       );
 
       for (const rec of criterionSlice) {
@@ -780,132 +766,56 @@ async function discoverArtHouseCatalog(
           tmdbSource: "criterion",
         });
       }
-
-      for (const rec of indieSlice) {
-        if (
-          isSeen(rec.id, seenTmdbIds) ||
-          isRawSeen(
-            {
-              title: rec.title,
-              year: rec.release_date
-                ? parseInt(rec.release_date.slice(0, 4), 10)
-                : undefined,
-            },
-            seenRaw,
-          )
-        ) continue;
-
-        addCandidate(candidates, {
-          ...searchResultFields(rec),
-          score:
-            INDIE_DISCOVER_SCORE +
-            artHouseBoost(signalsFromSearchResult(rec)) * 0.45,
-          reason: `Critically acclaimed ${genrePref.name} indie`,
-          genre: genrePref.name,
-          tmdbSource: "discover",
-        });
-      }
     }),
   );
 
-  for (const [directorIndex, directorPref] of discoverDirectorsForBlend(
-    tasteProfile,
-    hash,
-  ).entries()) {
-    const personId = await searchPersonId(directorPref.name);
-    if (!personId) continue;
+  await Promise.all(
+    discoverDirectorsForBlend(tasteProfile, hash).map(
+      async (directorPref, directorIndex) => {
+        const personId = await searchPersonId(directorPref.name);
+        if (!personId) return;
 
-    const bonus = directorPref.name === topDirector ? 2.5 : 0;
-    const results = await discoverMovies({
-      personId,
-      excludeIds,
-      page: discoverPage + directorIndex + (hash % 3),
-      artHouse: true,
-      voteAverageMin: 7.0,
-      voteCountMax: 2000,
-    });
-
-    const directorSlice = rotateSlice(
-      results,
-      (hash >> 4) + directorIndex,
-      Math.min(6, results.length),
-    );
-
-    for (const rec of directorSlice) {
-      const recYear = rec.release_date
-        ? parseInt(rec.release_date.slice(0, 4), 10)
-        : undefined;
-      if (
-        isSeen(rec.id, seenTmdbIds) ||
-        candidates.has(rec.id) ||
-        isRawSeen({ title: rec.title, year: recYear }, seenRaw)
-      ) continue;
-
-      const signals = signalsFromSearchResult(rec);
-      if (!isArtHouseCandidate(signals)) continue;
-
-      addCandidate(candidates, {
-        ...searchResultFields(rec),
-        score: DIRECTOR_DISCOVER_SCORE + bonus + artHouseBoost(signals) * 0.35,
-        reason: `Art-house deep cut from ${directorPref.name}`,
-        director: directorPref.name,
-        tmdbSource: "discover",
-      });
-    }
-  }
-}
-
-async function nicheBackfill(
-  candidates: Map<number, ScoredCandidate>,
-  tasteProfile: TasteProfile,
-  seenTmdbIds: Set<number>,
-  seenRaw: Set<string>,
-  user1: ParticipantData,
-  user2: ParticipantData,
-  salt = "",
-): Promise<void> {
-  const chosenIds = new Set([...seenTmdbIds, ...candidates.keys()]);
-  const exclude = Array.from(chosenIds);
-  const hash = blendHash(user1, user2, salt);
-  const startPage = blendDiscoverPage(user1, user2, salt);
-  const genres = discoverGenresForBlend(tasteProfile, hash >> 1);
-
-  for (let page = startPage; page <= startPage + BACKFILL_PAGE_BUDGET - 1; page += 1) {
-    if (candidates.size >= TARGET * 3) return;
-
-    for (const genrePref of genres) {
-      const genreId = mapGenreToTmdbId(genrePref.name);
-      if (!genreId) continue;
-
-      const results = await discoverCriterionMovies({
-        genreIds: [genreId],
-        excludeIds: exclude,
-        page,
-      });
-
-      for (const rec of results) {
-        const recYear = rec.release_date
-          ? parseInt(rec.release_date.slice(0, 4), 10)
-          : undefined;
-        if (
-          isSeen(rec.id, seenTmdbIds) ||
-          candidates.has(rec.id) ||
-          isRawSeen({ title: rec.title, year: recYear }, seenRaw)
-        ) continue;
-
-        addCandidate(candidates, {
-          ...searchResultFields(rec),
-          score: 2 + artHouseBoost(signalsFromSearchResult(rec)) * 0.3,
-          reason: `Criterion backfill · ${genrePref.name}`,
-          genre: genrePref.name,
-          tmdbSource: "criterion",
+        const bonus = directorPref.name === topDirector ? 2.5 : 0;
+        const results = await discoverMovies({
+          personId,
+          excludeIds,
+          page: discoverPage + directorIndex + (hash % 3),
+          artHouse: true,
+          voteAverageMin: 7.0,
+          voteCountMax: 2000,
         });
-        chosenIds.add(rec.id);
-        exclude.push(rec.id);
-        if (candidates.size >= TARGET * 3) return;
-      }
-    }
-  }
+
+        const directorSlice = rotateSlice(
+          results,
+          (hash >> 4) + directorIndex,
+          Math.min(4, results.length),
+        );
+
+        for (const rec of directorSlice) {
+          const recYear = rec.release_date
+            ? parseInt(rec.release_date.slice(0, 4), 10)
+            : undefined;
+          if (
+            isSeen(rec.id, seenTmdbIds) ||
+            candidates.has(rec.id) ||
+            isRawSeen({ title: rec.title, year: recYear }, seenRaw)
+          ) continue;
+
+          const signals = signalsFromSearchResult(rec);
+          if (!isArtHouseCandidate(signals)) continue;
+
+          addCandidate(candidates, {
+            ...searchResultFields(rec),
+            score:
+              DIRECTOR_DISCOVER_SCORE + bonus + artHouseBoost(signals) * 0.35,
+            reason: `Art-house deep cut from ${directorPref.name}`,
+            director: directorPref.name,
+            tmdbSource: "discover",
+          });
+        }
+      },
+    ),
+  );
 }
 
 async function buildTasteRecommendations(
@@ -966,19 +876,6 @@ async function buildTasteRecommendations(
   ]);
 
   let sorted = filterCandidates(candidates, seenTmdbIds);
-
-  if (sorted.length < TARGET) {
-    await nicheBackfill(
-      candidates,
-      tasteProfile,
-      seenTmdbIds,
-      seenRaw,
-      user1,
-      user2,
-      salt,
-    );
-    sorted = filterCandidates(candidates, seenTmdbIds);
-  }
 
   const rankPool = sorted.slice(0, RANK_POOL);
   const topGenre = tasteProfile.topSharedGenre?.name;
