@@ -320,6 +320,8 @@ export async function discoverMovies(options: {
   voteCountMin?: number;
   voteCountMax?: number;
   voteAverageMin?: number;
+  releaseDateGte?: string;
+  releaseDateLte?: string;
 }): Promise<TmdbSearchResult[]> {
   const artHouse = options.artHouse ?? false;
   const params = new URLSearchParams({
@@ -332,8 +334,20 @@ export async function discoverMovies(options: {
     page: String(options.page ?? 1),
   });
 
+  if (options.voteAverageMin !== undefined) {
+    params.set("vote_average.gte", String(options.voteAverageMin));
+  } else if (artHouse) {
+    params.set("vote_average.gte", String(7.0));
+  }
+
+  if (options.releaseDateGte) {
+    params.set("primary_release_date.gte", options.releaseDateGte);
+  }
+  if (options.releaseDateLte) {
+    params.set("primary_release_date.lte", options.releaseDateLte);
+  }
+
   if (artHouse) {
-    params.set("vote_average.gte", String(options.voteAverageMin ?? 7.0));
     params.set("vote_count.lte", String(options.voteCountMax ?? 2500));
   } else if (options.niche || options.voteCountMax) {
     params.set(
@@ -412,6 +426,25 @@ export async function discoverIndieMovies(options: {
     artHouse: true,
     voteAverageMin: 7.0,
     voteCountMax: 2000,
+  });
+}
+
+/** Acclaimed titles from the last ~15 years in a shared taste genre. */
+export async function discoverRecentTasteMovies(options: {
+  genreIds?: number[];
+  excludeIds?: number[];
+  page?: number;
+  yearGte?: number;
+}): Promise<TmdbSearchResult[]> {
+  const yearGte = options.yearGte ?? new Date().getFullYear() - 15;
+  return discoverMovies({
+    ...options,
+    releaseDateGte: `${yearGte}-01-01`,
+    sortBy: "vote_average.desc",
+    voteCountMin: 60,
+    voteCountMax: 9000,
+    voteAverageMin: 6.8,
+    niche: true,
   });
 }
 

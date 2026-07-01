@@ -3,7 +3,9 @@ import { normalizeTitle } from "@/lib/blend/matching";
 import { intersectRatedFilms, normalizePreferenceName } from "@/lib/blend/taste";
 import {
   discoverCriterionMovies,
+  discoverIndieMovies,
   discoverMovies,
+  discoverRecentTasteMovies,
   enrichFilmsBatch,
   getSimilarMovies,
   isTmdbConfigured,
@@ -30,10 +32,13 @@ import type {
 
 const HIGH_RATING_THRESHOLD = 4;
 const TARGET = 24;
-const RANK_POOL = 36;
-const SEED_LIMIT = 4;
-const SEED_POOL = 10;
-const SEED_BATCH_SIZE = 5;
+const RANK_POOL = 48;
+const SEED_LIMIT = 6;
+const SEED_POOL = 14;
+const SEED_BATCH_SIZE = 6;
+const SIMILAR_PER_SEED = 12;
+const MIN_RECENT_PICKS = 8;
+const RECENT_YEAR_FLOOR = 2010;
 
 /** Boutique / festival / Criterion-scale titles on TMDB. */
 export const NICHE_VOTE_MIN = 40;
@@ -57,11 +62,14 @@ const NICHE_BONUS_WEIGHT = 2.5;
 const ART_HOUSE_WEIGHT = 3.2;
 const MAINSTREAM_PENALTY_WEIGHT = 0.18;
 const SEED_CONNECTION_BONUS = 9;
-const CATALOG_ONLY_PENALTY = 7;
+const CATALOG_ONLY_PENALTY = 5;
+const RECENT_DISCOVER_SCORE = 6;
+const RECENT_ERA_WEIGHT = 2.8;
+const TASTE_YEAR_WEIGHT = 2.2;
 
 const MAX_PER_DIRECTOR = 2;
-const MAX_PER_GENRE = 5;
-const MAX_PER_DECADE = 4;
+const MAX_PER_GENRE = 6;
+const MAX_PER_DECADE = 5;
 
 function candidateToFilm(candidate: ScoredCandidate): EnrichedFilm {
   return tmdbResultToEnriched({
@@ -79,6 +87,7 @@ function candidateToFilm(candidate: ScoredCandidate): EnrichedFilm {
 function filterCandidates(
   candidates: Map<number, ScoredCandidate>,
   seenTmdbIds: Set<number>,
+  relaxed = false,
 ): ScoredCandidate[] {
   return Array.from(candidates.values())
     .filter((candidate) => {
@@ -90,7 +99,9 @@ function filterCandidates(
         popularity: candidate.popularity,
         originalLanguage: candidate.originalLanguage,
       };
-      return passesArtHouseGate(candidate, signals);
+      return relaxed
+        ? passesRelaxedTasteGate(candidate, signals)
+        : passesTasteGate(candidate, signals);
     })
     .sort((a, b) => b.score - a.score);
 }
@@ -170,7 +181,7 @@ function discoverGenresForBlend(
     ...tasteProfile.user1TopGenres.slice(0, 4),
     ...tasteProfile.user2TopGenres.slice(0, 4),
   ]);
-  return rotateSlice(pool, hash, Math.min(2, pool.length));
+  return rotateSlice(pool, hash, Math.min(3, pool.length));
 }
 
 function discoverDirectorsForBlend(
@@ -179,10 +190,55 @@ function discoverDirectorsForBlend(
 ): WeightedPreference[] {
   const pool = uniquePreferences([
     ...tasteProfile.sharedDirectorsRanked,
-    ...tasteProfile.user1TopDirectors.slice(0, 3),
-    ...tasteProfile.user2TopDirectors.slice(0, 3),
+    ...tasteProfile.user1TopDirectors.slice(0, 4),
+    ...tasteProfile.user2TopDirectors.slice(0, 4),
   ]);
-  return rotateSlice(pool, hash >> 3, Math.min(1, pool.length));
+  return rotateSlice(pool, hash >> 3, Math.min(2, pool.length));
+}
+
+function tasteYearCenter(seeds: TasteSeed[]): number | null {
+  const years = seeds
+    .map((seed) => seed.film.year)
+    .filter((year): year is number => Boolean(year));
+  if (years.length === 0) return null;
+  return Math.round(years.reduce((sum, year) => sum + year, 0) / years.length);
+}
+
+function recentEraBonus(year?: number): number {
+  if (!year) return 0;
+  if (year >= 2020) return 4.5;
+  if (year >= 2015) return 3.5;
+  if (year >= RECENT_YEAR_FLOOR) return 2.5;
+  if (year >= 2000) return 1;
+  return 0;
+}
+
+function tasteYearBonus(year: number | undefined, center: number | null): number {
+  if (!year || !center) return 0;
+  const gap = Math.abs(year - center);
+  if (gap <= 4) return 5;
+  if (gap <= 8) return 3.5;
+  if (gap <= 14) return 2;
+  if (gap <= 22) return 0.8;
+  return 0;
+}
+
+function isTasteAdjacentFromSeed(
+  signals: ArtHouseSignals,
+  year?: number,
+  festival = false,
+): boolean {
+  if (festival) return true;
+  if (isArtHouseCandidate(signals)) return true;
+  if (isMainstreamBlock(signals)) return false;
+  if (year && year >= RECENT_YEAR_FLOOR && (signals.voteAverage ?? 0) >= 6.6) {
+    return true;
+  }
+  return (
+    (signals.voteAverage ?? 0) >= 6.8 &&
+    (signals.voteCount ?? 0) <= 5000 &&
+    (signals.popularity ?? 0) <= 35
+  );
 }
 
 function blendDiscoverPage(
@@ -349,7 +405,135 @@ function decadeKey(year?: number): string {
   return `${Math.floor(year / 10) * 10}s`;
 }
 
+async function discoverRecentTasteCatalog(
+  candidates: Map<number, ScoredCandidate>,
+  tasteProfile: TasteProfile,
+  seenTmdbIds: Set<number>,
+  seenRaw: Set<string>,
+  excludeIds: number[],
+  user1: ParticipantData,
+  user2: ParticipantData,
+  salt = "",
+): Promise<void> {
+  const hash = blendHash(user1, user2, salt);
+  const discoverPage = blendDiscoverPage(user1, user2, salt);
+  const topGenre = tasteProfile.topSharedGenre?.name;
+  const genres = discoverGenresForBlend(tasteProfile, hash >> 2);
+
+  await Promise.all(
+    genres.map(async (genrePref, genreIndex) => {
+      const genreId = mapGenreToTmdbId(genrePref.name);
+      if (!genreId) return;
+
+      const results = await discoverRecentTasteMovies({
+        genreIds: [genreId],
+        excludeIds,
+        page: discoverPage + genreIndex,
+        yearGte: RECENT_YEAR_FLOOR,
+      });
+
+      const recentSlice = rotateSlice(
+        results,
+        (hash >> 1) + genreIndex,
+        Math.min(6, results.length),
+      );
+
+      for (const rec of recentSlice) {
+        const recYear = rec.release_date
+          ? parseInt(rec.release_date.slice(0, 4), 10)
+          : undefined;
+        if (
+          isSeen(rec.id, seenTmdbIds) ||
+          isRawSeen({ title: rec.title, year: recYear }, seenRaw)
+        ) continue;
+
+        const signals = signalsFromSearchResult(rec);
+        if (isMainstreamBlock(signals)) continue;
+        if ((signals.voteAverage ?? 0) < 6.6) continue;
+
+        const bonus = genrePref.name === topGenre ? 2.5 : 0;
+        addCandidate(candidates, {
+          ...searchResultFields(rec),
+          score:
+            RECENT_DISCOVER_SCORE +
+            bonus +
+            recentEraBonus(recYear) * 0.6,
+          reason: `Recent ${genrePref.name} pick in your lane`,
+          genre: genrePref.name,
+          tmdbSource: "discover",
+        });
+      }
+    }),
+  );
+}
+
+async function backfillSimilarFromSeeds(
+  seeds: TasteSeed[],
+  candidates: Map<number, ScoredCandidate>,
+  seenTmdbIds: Set<number>,
+  seenRaw: Set<string>,
+  excludeIds: number[],
+): Promise<void> {
+  await Promise.all(
+    seeds.map(async (seed) => {
+      if (!seed.film.tmdbId) return;
+      const similar = await getSimilarMovies(seed.film.tmdbId, excludeIds);
+
+      for (const [index, rec] of similar.slice(0, 14).entries()) {
+        const recYear = rec.release_date
+          ? parseInt(rec.release_date.slice(0, 4), 10)
+          : undefined;
+        if (
+          isSeen(rec.id, seenTmdbIds) ||
+          candidates.has(rec.id) ||
+          isRawSeen({ title: rec.title, year: recYear }, seenRaw)
+        ) continue;
+
+        const signals = signalsFromSearchResult(rec);
+        if (isMainstreamBlock(signals)) continue;
+        if ((signals.voteAverage ?? 0) < 6.2) continue;
+
+        const depthDecay = Math.max(0.35, 1 - index * 0.05);
+        addCandidate(candidates, {
+          ...searchResultFields(rec),
+          score: 5 * seed.weight * depthDecay,
+          reason: `Taste-adjacent to ${seed.film.title}`,
+          seedTitle: seed.film.title,
+          tmdbSource: "similar",
+          seedConnection: true,
+        });
+      }
+    }),
+  );
+}
+
 function diversifyCandidates(
+  ranked: RankedCandidate[],
+  limit: number,
+): RankedCandidate[] {
+  const isRecent = (item: RankedCandidate) =>
+    (item.film.year ?? item.candidate.year ?? 0) >= RECENT_YEAR_FLOOR;
+
+  const recentRanked = ranked.filter(isRecent);
+  const olderRanked = ranked.filter((item) => !isRecent(item));
+
+  const recentPicks = diversifyCandidatesSinglePass(
+    recentRanked,
+    Math.min(MIN_RECENT_PICKS, limit),
+  );
+  const pickedIds = new Set(recentPicks.map((item) => item.candidate.tmdbId));
+  const restPool = [...recentRanked, ...olderRanked].filter(
+    (item) => !pickedIds.has(item.candidate.tmdbId),
+  );
+  const restPicks = diversifyCandidatesSinglePass(
+    restPool,
+    Math.max(0, limit - recentPicks.length),
+  );
+
+  return [...recentPicks, ...restPicks].slice(0, limit);
+}
+
+function diversifyCandidatesSinglePass(
   ranked: RankedCandidate[],
   limit: number,
 ): RankedCandidate[] {
@@ -633,6 +817,54 @@ function passesArtHouseGate(
   return isArtHouseCandidate(signals) && candidate.score >= GENRE_DISCOVER_SCORE;
 }
 
+function passesTasteGate(
+  candidate: ScoredCandidate,
+  signals: ArtHouseSignals,
+): boolean {
+  if (passesArtHouseGate(candidate, signals)) return true;
+  if (isMainstreamBlock(signals)) return false;
+
+  const year = candidate.year;
+  const recent =
+    year !== undefined && year >= RECENT_YEAR_FLOOR;
+
+  if (
+    candidate.seedConnections >= 1 &&
+    candidate.tmdbSources.has("similar") &&
+    isTasteAdjacentFromSeed(signals, year, isFestivalCanon(signals.tmdbId))
+  ) {
+    return true;
+  }
+
+  if (
+    recent &&
+    (candidate.matchedGenres.size > 0 || candidate.matchedDirectors.size > 0) &&
+    (signals.voteAverage ?? 0) >= 6.7
+  ) {
+    return true;
+  }
+
+  if (
+    recent &&
+    candidate.tmdbSources.has("discover") &&
+    (signals.voteAverage ?? 0) >= 6.8
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function passesRelaxedTasteGate(
+  candidate: ScoredCandidate,
+  signals: ArtHouseSignals,
+): boolean {
+  if (passesTasteGate(candidate, signals)) return true;
+  if (isMainstreamBlock(signals)) return false;
+  if (candidate.seedConnections >= 1) return (signals.voteAverage ?? 0) >= 6.3;
+  return (signals.voteAverage ?? 0) >= 6.5 && (signals.voteCount ?? 0) <= 8000;
+}
+
 function mainstreamPenalty(candidate: ScoredCandidate): number {
   const votes = candidate.voteCount ?? 0;
   const pop = candidate.popularity ?? 0;
@@ -668,7 +900,7 @@ async function expandFromSeeds(
 
     const similar = await getSimilarMovies(seed.film.tmdbId, excludeIds);
     const offset = hash % 4;
-    const window = similar.slice(offset, offset + 6);
+    const window = similar.slice(offset, offset + SIMILAR_PER_SEED);
 
     for (const [index, rec] of window.entries()) {
       const recYear = rec.release_date
@@ -680,8 +912,13 @@ async function expandFromSeeds(
       ) continue;
 
       const signals = signalsFromSearchResult(rec);
-      if (!isArtHouseCandidate(signals) && !isFestivalCanon(rec.id)) continue;
-      if (isMainstreamBlock(signals)) continue;
+      if (
+        !isTasteAdjacentFromSeed(
+          signals,
+          recYear,
+          isFestivalCanon(rec.id),
+        )
+      ) continue;
 
       const depthDecay = Math.max(0.5, 1 - index * 0.04);
       addCandidate(candidates, {
@@ -728,16 +965,28 @@ async function discoverArtHouseCatalog(
       if (!genreId) return;
 
       const page = discoverPage + genreIndex + (hash % 2);
-      const criterionResults = await discoverCriterionMovies({
-        genreIds: [genreId],
-        excludeIds,
-        page,
-      });
+      const [criterionResults, indieResults] = await Promise.all([
+        discoverCriterionMovies({
+          genreIds: [genreId],
+          excludeIds,
+          page,
+        }),
+        discoverIndieMovies({
+          genreIds: [genreId],
+          excludeIds,
+          page: page + 1,
+        }),
+      ]);
 
       const criterionSlice = rotateSlice(
         criterionResults,
         hash + genreIndex,
         Math.min(4, criterionResults.length),
+      );
+      const indieSlice = rotateSlice(
+        indieResults,
+        (hash >> 2) + genreIndex,
+        Math.min(3, indieResults.length),
       );
 
       for (const rec of criterionSlice) {
@@ -766,6 +1015,31 @@ async function discoverArtHouseCatalog(
           tmdbSource: "criterion",
         });
       }
+
+      for (const rec of indieSlice) {
+        if (
+          isSeen(rec.id, seenTmdbIds) ||
+          isRawSeen(
+            {
+              title: rec.title,
+              year: rec.release_date
+                ? parseInt(rec.release_date.slice(0, 4), 10)
+                : undefined,
+            },
+            seenRaw,
+          )
+        ) continue;
+
+        addCandidate(candidates, {
+          ...searchResultFields(rec),
+          score:
+            INDIE_DISCOVER_SCORE +
+            artHouseBoost(signalsFromSearchResult(rec)) * 0.45,
+          reason: `Critically acclaimed ${genrePref.name} indie`,
+          genre: genrePref.name,
+          tmdbSource: "discover",
+        });
+      }
     }),
   );
 
@@ -788,7 +1062,7 @@ async function discoverArtHouseCatalog(
         const directorSlice = rotateSlice(
           results,
           (hash >> 4) + directorIndex,
-          Math.min(4, results.length),
+          Math.min(5, results.length),
         );
 
         for (const rec of directorSlice) {
@@ -873,10 +1147,32 @@ async function buildTasteRecommendations(
       user2,
       salt,
     ),
+    discoverRecentTasteCatalog(
+      candidates,
+      tasteProfile,
+      seenTmdbIds,
+      seenRaw,
+      excludeIds,
+      user1,
+      user2,
+      salt,
+    ),
   ]);
 
   let sorted = filterCandidates(candidates, seenTmdbIds);
 
+  if (sorted.length < TARGET) {
+    await backfillSimilarFromSeeds(
+      seeds,
+      candidates,
+      seenTmdbIds,
+      seenRaw,
+      excludeIds,
+    );
+    sorted = filterCandidates(candidates, seenTmdbIds, true);
+  }
+
+  const yearCenter = tasteYearCenter(seeds);
   const rankPool = sorted.slice(0, RANK_POOL);
   const topGenre = tasteProfile.topSharedGenre?.name;
   const topDirector = tasteProfile.topSharedDirector?.name;
@@ -897,6 +1193,7 @@ async function buildTasteRecommendations(
     const catalogPenalty = isCatalogOnlyCandidate(candidate)
       ? CATALOG_ONLY_PENALTY
       : 0;
+    const filmYear = film.year ?? candidate.year;
 
     const finalScore =
       candidate.score +
@@ -904,6 +1201,8 @@ async function buildTasteRecommendations(
       affinity * AFFINITY_WEIGHT +
       niche * NICHE_BONUS_WEIGHT +
       artHouse * ART_HOUSE_WEIGHT +
+      recentEraBonus(filmYear) * RECENT_ERA_WEIGHT +
+      tasteYearBonus(filmYear, yearCenter) * TASTE_YEAR_WEIGHT +
       candidate.seedConnections * SEED_CONNECTION_BONUS -
       catalogPenalty -
       mainstreamPenalty({
@@ -1001,6 +1300,8 @@ async function buildTasteRecommendations(
       !isRawSeen({ title: film.title, year: film.year }, seenRaw),
   );
 }
+
+export const RECOMMENDATIONS_ALGO_VERSION = 3;
 
 export async function buildRecommendationBundle(
   user1: ParticipantData,

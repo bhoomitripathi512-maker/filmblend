@@ -1,4 +1,4 @@
-import { buildRecommendationBundle } from "@/lib/blend/recommendations";
+import { buildRecommendationBundle, RECOMMENDATIONS_ALGO_VERSION } from "@/lib/blend/recommendations";
 import { intersectFilmsRobust, uniqueFilms } from "@/lib/blend/matching";
 import {
   buildTasteProfile,
@@ -49,7 +49,7 @@ function sharedDirectorsFromTaste(
     .slice(0, 10);
 }
 
-export const RECOMMENDATIONS_ALGO_VERSION = 2;
+export { RECOMMENDATIONS_ALGO_VERSION };
 
 export async function computeBlendResults(
   participants: ParticipantData[],
