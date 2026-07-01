@@ -24,7 +24,6 @@ export default function RootLayout({
         </HeaderVariantProvider>
         <footer className="fixed inset-x-0 bottom-0 z-50 flex flex-col justify-between gap-2 border-t border-ink bg-paper px-7 py-5 text-[11px] uppercase tracking-[0.08em] text-muted sm:flex-row sm:items-center">
           <span>Not affiliated with Letterboxd or MUBI.</span>
-          <span>by Aman &amp; Bhoomi</span>
           <span>Data via TMDB</span>
         </footer>
       </body>
