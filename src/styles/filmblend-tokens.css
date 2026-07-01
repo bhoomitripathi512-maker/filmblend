@@ -9,6 +9,8 @@
   --cream: #fffaf0;
   --star: #b8851a;
   --radius: 3px;
+  --chrome-header: 3.5rem;
+  --chrome-footer: 5.75rem;
   --background: var(--paper);
   --foreground: var(--ink);
 }
@@ -39,6 +41,13 @@ body {
   color: var(--foreground);
   font-family: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
   letter-spacing: -0.02em;
+  overflow-x: hidden;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --chrome-footer: 3.25rem;
+  }
 }
 
 input,
@@ -63,9 +72,9 @@ textarea,
 /* Uppercase tracked label */
 .kicker,
 .eyebrow {
-  font-size: 12px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   color: var(--muted);
   line-height: 1.4;
 }
@@ -74,13 +83,13 @@ textarea,
 .btn {
   position: relative;
   z-index: 1;
-  height: 38px;
+  height: 36px;
   border: 1px solid var(--ink);
   background: transparent;
   color: var(--ink);
-  padding: 0 16px;
+  padding: 0 14px;
   text-transform: uppercase;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   cursor: pointer;
   transition: 0.18s ease;
@@ -109,8 +118,8 @@ textarea,
 /* Editorial pill */
 .pill {
   border: 1px solid var(--ink);
-  padding: 8px 11px;
-  font-size: 12px;
+  padding: 7px 10px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   background: transparent;
@@ -125,8 +134,8 @@ textarea,
 
 /* 3x3 dot mark */
 .mark {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 2px;

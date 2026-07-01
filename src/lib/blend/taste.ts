@@ -17,7 +17,8 @@ import { enrichFilmsBatch } from "@/lib/tmdb/client";
 export const DEFAULT_UNRATED = 3;
 /** Frequency nudges ranking without overpowering star ratings. */
 export const COUNT_BONUS = 0.25;
-export const TASTE_ENRICH_LIMIT = 80;
+export const TASTE_ENRICH_LIMIT = 50;
+export const TASTE_RATED_ENRICH_LIMIT = 40;
 
 const GENRE_ALIASES: Record<string, string> = {
   "sci fi": "science fiction",
@@ -32,6 +33,15 @@ export function normalizePreferenceName(name: string): string {
 
 function ratingMap(user: ParticipantData): Map<string, number> {
   return new Map(user.filmsRated.map((f) => [f.slug, f.rating]));
+}
+
+function topRatedForEnrichment(
+  films: RatedFilm[],
+  limit = TASTE_RATED_ENRICH_LIMIT,
+): RatedFilm[] {
+  return [...films]
+    .sort((a, b) => b.rating - a.rating)
+    .slice(0, limit);
 }
 
 function filmWeight(slug: string, ratings: Map<string, number>): number {
@@ -226,8 +236,8 @@ export async function buildTasteProfile(
       : await Promise.all([
           enrichFilmsBatch(user1.filmsWatched.slice(0, TASTE_ENRICH_LIMIT)),
           enrichFilmsBatch(user2.filmsWatched.slice(0, TASTE_ENRICH_LIMIT)),
-          enrichFilmsBatch(user1.filmsRated),
-          enrichFilmsBatch(user2.filmsRated),
+          enrichFilmsBatch(topRatedForEnrichment(user1.filmsRated)),
+          enrichFilmsBatch(topRatedForEnrichment(user2.filmsRated)),
         ]);
 
   const allEnriched1 = uniqueEnrichedBySlug([...enriched1, ...ratedEnriched1]);
@@ -249,7 +259,7 @@ export async function buildTasteProfile(
     allEnriched2,
   );
   const commonHighlyRated = await enrichFilmsBatch(
-    commonHighlyRatedRaw.slice(0, 12),
+    commonHighlyRatedRaw.slice(0, 8),
   );
 
   const enrichedCount = enriched1.length + enriched2.length;

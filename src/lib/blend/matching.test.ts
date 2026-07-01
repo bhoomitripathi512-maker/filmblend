@@ -4,6 +4,7 @@ import {
   intersectFilmsRobust,
   matchReport,
   normalizeTitle,
+  areLetterboxdSlugConflicts,
 } from "./matching.ts";
 
 describe("film matching", () => {
@@ -31,6 +32,21 @@ describe("film matching", () => {
     const a = [{ slug: "dune-1984", title: "Dune", year: 1984 }];
     const b = [{ slug: "dune-2021", title: "Dune", year: 2021 }];
     assert.equal(intersectFilmsRobust(a, b).length, 0);
+  });
+
+  it("does not match Letterboxd disambiguation slugs with same title", () => {
+    const a = [{ slug: "the-girlfriend-2025", title: "The Girlfriend", year: 2025 }];
+    const b = [{ slug: "the-girlfriend-2025-1", title: "The Girlfriend", year: 2025 }];
+    assert.equal(intersectFilmsRobust(a, b).length, 0);
+    assert.equal(areLetterboxdSlugConflicts("the-girlfriend-2025", "the-girlfriend-2025-1"), true);
+  });
+
+  it("prefers base slug when deduplicating title matches", () => {
+    const a = [{ slug: "the-girlfriend-2025", title: "The Girlfriend", year: 2025 }];
+    const b = [{ slug: "the-girlfriend-2025", title: "The Girlfriend", year: 2025 }];
+    const overlap = intersectFilmsRobust(a, b);
+    assert.equal(overlap.length, 1);
+    assert.equal(overlap[0].slug, "the-girlfriend-2025");
   });
 
   it("matches via tmdb id when slugs differ", () => {

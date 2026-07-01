@@ -7,13 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/lib/blend/matching.test.ts"
+    "test": "tsx --test src/lib/blend/matching.test.ts src/lib/blend/recommendations.test.ts src/lib/letterboxd/fetcher.test.ts src/lib/api/security.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
     "@supabase/supabase-js": "^2.108.2",
     "cheerio": "^1.2.0",
     "got-scraping": "^4.2.1",
+    "impit": "^0.14.2",
     "nanoid": "^5.1.15",
     "next": "16.2.9",
     "react": "19.2.4",

@@ -28,6 +28,29 @@ export function normalizeTitle(title: string): string {
   return normalized;
 }
 
+function getDisambigBase(slug: string): string | null {
+  const match = slug.match(/^(.+)-([1-9]\d*)$/);
+  if (!match) return null;
+  // Release years in slugs are 4 digits; Letterboxd duplicate suffixes are short.
+  if (match[2].length >= 4) return null;
+  return match[1];
+}
+
+/** Letterboxd uses `-1`, `-2`, … suffixes for distinct films that share a base slug. */
+export function areLetterboxdSlugConflicts(slugA: string, slugB: string): boolean {
+  const a = normalizeSlug(slugA);
+  const b = normalizeSlug(slugB);
+  if (!a || !b || a === b) return false;
+
+  const baseA = getDisambigBase(a);
+  const baseB = getDisambigBase(b);
+
+  if (baseA === b || baseB === a) return true;
+  if (baseA && baseB && baseA === baseB) return true;
+
+  return false;
+}
+
 export function filmKey(film: LetterboxdFilm): string {
   const slug = normalizeSlug(film.slug);
   if (slug) return `slug:${slug}`;
@@ -37,6 +60,16 @@ export function filmKey(film: LetterboxdFilm): string {
 }
 
 function pickCanonical(a: LetterboxdFilm, b: LetterboxdFilm): LetterboxdFilm {
+  const slugA = normalizeSlug(a.slug);
+  const slugB = normalizeSlug(b.slug);
+
+  if (slugA === slugB) return a;
+
+  const baseA = getDisambigBase(slugA);
+  const baseB = getDisambigBase(slugB);
+  if (baseA === slugB) return b;
+  if (baseB === slugA) return a;
+
   if (a.year && !b.year) return a;
   if (b.year && !a.year) return b;
   if (a.title.length >= b.title.length) return a;
@@ -118,7 +151,10 @@ export function matchReport(
     const key = `${normalizeTitle(film.title)}|${film.year}`;
     const candidates = bByTitleYear.get(key);
     if (!candidates?.length) continue;
-    const match = candidates[0];
+    const match = candidates.find(
+      (candidate) => !areLetterboxdSlugConflicts(slug, candidate.slug),
+    );
+    if (!match) continue;
     slugMatches.push(pickCanonical(film, match));
     titleYearMatches.push(pickCanonical(film, match));
     matchedASlugs.add(slug);
@@ -134,7 +170,11 @@ export function matchReport(
     const key = normalizeTitle(film.title);
     const candidates = bByTitle.get(key);
     if (!candidates?.length) continue;
-    const match = candidates.find((c) => !c.year || !film.year || c.year === film.year);
+    const match = candidates.find(
+      (c) =>
+        !areLetterboxdSlugConflicts(slug, c.slug) &&
+        (!c.year || !film.year || c.year === film.year),
+    );
     if (!match) continue;
     if (film.year && match.year && film.year !== match.year) continue;
     slugMatches.push(pickCanonical(film, match));
@@ -161,7 +201,14 @@ export function matchReport(
 
   const unique = new Map<string, LetterboxdFilm>();
   for (const film of slugMatches) {
-    unique.set(normalizeSlug(film.slug), film);
+    const key = film.year
+      ? `title:${normalizeTitle(film.title)}|${film.year}`
+      : normalizeSlug(film.slug);
+    if (!unique.has(key)) {
+      unique.set(key, film);
+      continue;
+    }
+    unique.set(key, pickCanonical(unique.get(key)!, film));
   }
 
   return {
@@ -187,7 +234,18 @@ export function uniqueFilms(...lists: LetterboxdFilm[][]): LetterboxdFilm[] {
   const map = new Map<string, LetterboxdFilm>();
   for (const list of lists) {
     for (const film of list) {
-      map.set(normalizeSlug(film.slug), film);
+      const tmdbId =
+        "tmdbId" in film &&
+        typeof film.tmdbId === "number" &&
+        Number.isFinite(film.tmdbId)
+          ? film.tmdbId
+          : null;
+      const key = tmdbId
+        ? `tmdb:${tmdbId}`
+        : film.year
+          ? `title:${normalizeTitle(film.title)}|${film.year}`
+          : `slug:${normalizeSlug(film.slug)}`;
+      map.set(key, film);
     }
   }
   return Array.from(map.values());

@@ -1,0 +1,27 @@
+---
+description: API and middleware security conventions for Filmblend
+globs: src/app/api/**/*.ts,src/middleware.ts,src/lib/api/**/*.ts
+alwaysApply: false
+---
+
+# Filmblend API security
+
+## Input validation
+
+- Blend slugs: use `parseBlendSlug()` — never pass raw URL params to Supabase.
+- Letterboxd usernames: use `parseLetterboxdUsername()` — reject path traversal, HTML, spaces.
+- JSON bodies: use `readBoundedJson()` with the default 8KB cap.
+
+## Responses
+
+- Wrap JSON responses with `applySecurityHeaders()`.
+- Return generic 500 messages to clients; log details server-side only.
+
+## Rate limiting
+
+- Heavy routes (`connect`, `compute`) are limited in middleware — do not bypass middleware for new API routes under `/api/blends`.
+
+## Secrets
+
+- `SUPABASE_SERVICE_ROLE_KEY` and `TMDB_API_KEY` are server-only.
+- `createAdminClient()` throws in production if the service role key is missing.

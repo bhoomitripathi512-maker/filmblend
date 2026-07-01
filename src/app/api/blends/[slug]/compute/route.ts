@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { RECOMMENDATIONS_ALGO_VERSION } from "@/lib/blend/compute";
+import { computeBlendResults, RECOMMENDATIONS_ALGO_VERSION } from "@/lib/blend/compute";
 import { applySecurityHeaders, parseBlendSlug } from "@/lib/api/security";
 import { createAdminClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import type { BlendResults, ParticipantData } from "@/types/blend";
+
+export const maxDuration = 60;
 
 function mapParticipant(row: Record<string, unknown>): ParticipantData {
   return {
@@ -39,7 +41,7 @@ function isCacheValid(
   return new Date(resultsComputedAt) >= new Date(latest);
 }
 
-export async function GET(
+export async function POST(
   _request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
@@ -70,7 +72,6 @@ export async function GET(
       .single();
 
     let blend = blendSelect.data;
-    let cacheEnabled = !blendSelect.error;
 
     if (blendSelect.error) {
       const fallback = await supabase
@@ -86,7 +87,6 @@ export async function GET(
       }
 
       blend = { ...fallback.data, results_json: null, results_computed_at: null };
-      cacheEnabled = false;
     }
 
     if (!blend) {
@@ -102,26 +102,59 @@ export async function GET(
       .order("slot");
 
     const mapped = (participants ?? []).map(mapParticipant);
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-
-    let results: BlendResults | null = null;
-
-    if (mapped.length === 2 && cacheEnabled) {
-      const cached = blend.results_json as BlendResults | null;
-      if (
-        cached &&
-        cached.algoVersion === RECOMMENDATIONS_ALGO_VERSION &&
-        isCacheValid(blend.results_computed_at as string | null, mapped)
-      ) {
-        results = cached;
-      }
+    if (mapped.length < 2) {
+      return applySecurityHeaders(
+        NextResponse.json(
+          { error: "Both profiles must be connected before computing results" },
+          { status: 400 },
+        ),
+      );
     }
+
+    const cached = (blend.results_json as BlendResults | null) ?? null;
+    if (
+      cached &&
+      cached.algoVersion === RECOMMENDATIONS_ALGO_VERSION &&
+      blend.results_computed_at &&
+      isCacheValid(blend.results_computed_at as string, mapped)
+    ) {
+      return applySecurityHeaders(
+        NextResponse.json({
+          id: blend.id,
+          slug: blend.slug,
+          status: blend.status,
+          participants: mapped,
+          results: cached,
+          shareUrl: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/blend/${blend.slug}`,
+          createdAt: blend.created_at,
+        }),
+      );
+    }
+
+    const results = await computeBlendResults(mapped, {
+      blendId: blend.id,
+      participantRowIds: (participants ?? []).map((row) => ({
+        slot: row.slot as 1 | 2,
+        id: row.id as string,
+      })),
+    });
+
+    await supabase
+      .from("blends")
+      .update({
+        results_json: results,
+        results_computed_at: new Date().toISOString(),
+        status: "complete",
+      })
+      .eq("id", blend.id);
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
     return applySecurityHeaders(
       NextResponse.json({
         id: blend.id,
         slug: blend.slug,
-        status: blend.status,
+        status: "complete",
         participants: mapped,
         results,
         shareUrl: `${baseUrl}/blend/${blend.slug}`,
@@ -129,12 +162,11 @@ export async function GET(
       }),
     );
   } catch (error) {
-    console.error("Blend fetch error:", error);
+    console.error("Blend compute error:", error);
+    const message =
+      error instanceof Error ? error.message : "Failed to compute blend results";
     return applySecurityHeaders(
-      NextResponse.json(
-        { error: "Failed to load blend" },
-        { status: 500 },
-      ),
+      NextResponse.json({ error: message }, { status: 500 }),
     );
   }
 }

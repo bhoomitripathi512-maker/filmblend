@@ -36,10 +36,15 @@ export interface ParticipantData {
 export interface EnrichedFilm extends LetterboxdFilm {
   tmdbId?: number;
   posterPath?: string | null;
+  overview?: string | null;
   genres?: string[];
   directors?: string[];
   runtime?: number | null;
   rating?: number;
+  popularity?: number;
+  voteCount?: number;
+  voteAverage?: number;
+  originalLanguage?: string | null;
 }
 
 export interface RecommendationExplanation {
@@ -112,6 +117,8 @@ export interface BlendResults {
   };
   tasteProfile: TasteProfile;
   recommendations: RecommendedFilm[];
+  /** Bumps when recommendation logic changes — invalidates cached results. */
+  algoVersion?: number;
 }
 
 export interface Blend {

@@ -1,4 +1,6 @@
 import type { EnrichedFilm, LetterboxdFilm } from "@/types/blend";
+import { normalizeTitle } from "@/lib/blend/matching";
+import { resolveTmdbFromLetterboxdSlug } from "@/lib/letterboxd/tmdb-link";
 import {
   readFilmCache,
   readFilmCacheBatch,
@@ -35,7 +37,11 @@ interface TmdbSearchResult {
   title: string;
   release_date?: string;
   poster_path?: string | null;
+  overview?: string | null;
+  popularity?: number;
   vote_average?: number;
+  vote_count?: number;
+  original_language?: string;
 }
 
 interface TmdbMovieDetails {
@@ -44,11 +50,34 @@ interface TmdbMovieDetails {
   runtime?: number | null;
   poster_path?: string | null;
   release_date?: string;
+  overview?: string | null;
+  popularity?: number;
+  vote_count?: number;
+  vote_average?: number;
+  original_language?: string;
+  genres?: { id: number; name: string }[];
+  production_companies?: { id: number; name: string }[];
+  credits?: {
+    crew?: { job: string; name: string; id: number }[];
+  };
+}
+
+interface TmdbTvDetails {
+  id: number;
+  name: string;
+  poster_path?: string | null;
+  first_air_date?: string;
+  overview?: string | null;
+  popularity?: number;
+  vote_count?: number;
+  episode_run_time?: number[];
   genres?: { id: number; name: string }[];
   credits?: {
     crew?: { job: string; name: string; id: number }[];
   };
 }
+
+type TmdbMediaDetails = TmdbMovieDetails | TmdbTvDetails;
 
 interface TmdbDiscoverResult {
   results: TmdbSearchResult[];
@@ -82,8 +111,14 @@ async function findTmdbId(film: LetterboxdFilm): Promise<number | null> {
   const results = data?.results ?? [];
   if (results.length === 0) return null;
 
+  const normalizedQuery = normalizeTitle(film.title);
+  const exactTitleMatches = results.filter(
+    (result) => normalizeTitle(result.title) === normalizedQuery,
+  );
+  const pool = exactTitleMatches.length > 0 ? exactTitleMatches : results;
+
   if (film.year) {
-    const yearMatch = results.find(
+    const yearMatch = pool.find(
       (result) =>
         result.release_date &&
         parseInt(result.release_date.slice(0, 4), 10) === film.year,
@@ -91,7 +126,17 @@ async function findTmdbId(film: LetterboxdFilm): Promise<number | null> {
     if (yearMatch) return yearMatch.id;
   }
 
-  return results[0].id;
+  return pool[0].id;
+}
+
+async function getTmdbDetails(
+  tmdbId: number,
+  mediaType: "movie" | "tv",
+): Promise<TmdbMediaDetails | null> {
+  if (mediaType === "tv") {
+    return tmdbFetch<TmdbTvDetails>(`/tv/${tmdbId}?append_to_response=credits`);
+  }
+  return getMovieDetails(tmdbId);
 }
 
 async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails | null> {
@@ -100,51 +145,104 @@ async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails | null>
   );
 }
 
-function detailsToEnriched(
-  film: LetterboxdFilm,
+export async function enrichTmdbMovieById(
   tmdbId: number,
-  details: TmdbMovieDetails,
-): EnrichedFilm {
-  const directors =
-    details.credits?.crew
-      ?.filter((c) => c.job === "Director")
-      .map((c) => c.name) ?? [];
+  film: LetterboxdFilm,
+  mediaType: "movie" | "tv" = "movie",
+): Promise<EnrichedFilm> {
+  if (!isTmdbConfigured()) return { ...film, tmdbId };
 
-  const year = details.release_date
-    ? parseInt(details.release_date.slice(0, 4), 10)
-    : film.year;
+  const details = await getTmdbDetails(tmdbId, mediaType);
+  if (!details) return { ...film, tmdbId };
 
-  return {
-    ...film,
-    year,
-    tmdbId,
-    posterPath: details.poster_path,
-    genres: details.genres?.map((g) => g.name) ?? [],
-    directors,
-    runtime: details.runtime ?? null,
-  };
+  return detailsToEnriched(film, tmdbId, details, mediaType);
+}
+
+async function resolveTmdbForFilm(
+  film: LetterboxdFilm,
+): Promise<{ tmdbId: number; mediaType: "movie" | "tv" } | null> {
+  const fromLetterboxd = await resolveTmdbFromLetterboxdSlug(film.slug);
+  if (fromLetterboxd) return fromLetterboxd;
+
+  const tmdbId = await findTmdbId(film);
+  if (!tmdbId) return null;
+
+  return { tmdbId, mediaType: "movie" };
 }
 
 export async function enrichFilm(film: LetterboxdFilm): Promise<EnrichedFilm> {
   if (!isTmdbConfigured()) return { ...film };
 
   const cached = await readFilmCache(film.slug);
-  if (cached) return { ...film, ...cached };
+  if (cached?.tmdbId) {
+    const fromLetterboxd = await resolveTmdbFromLetterboxdSlug(film.slug);
+    if (!fromLetterboxd || fromLetterboxd.tmdbId === cached.tmdbId) {
+      return { ...film, ...cached };
+    }
+  } else if (cached) {
+    return { ...film, ...cached };
+  }
 
-  const tmdbId = await findTmdbId(film);
-  if (!tmdbId) return { ...film };
+  const resolved = await resolveTmdbForFilm(film);
+  if (!resolved) return { ...film };
 
-  const details = await getMovieDetails(tmdbId);
-  if (!details) return { ...film, tmdbId };
+  const details = await getTmdbDetails(resolved.tmdbId, resolved.mediaType);
+  if (!details) return { ...film, tmdbId: resolved.tmdbId };
 
-  const enriched = detailsToEnriched(film, tmdbId, details);
+  const enriched = detailsToEnriched(
+    film,
+    resolved.tmdbId,
+    details,
+    resolved.mediaType,
+  );
   await writeFilmCache(enriched);
   return enriched;
 }
 
+function detailsToEnriched(
+  film: LetterboxdFilm,
+  tmdbId: number,
+  details: TmdbMediaDetails,
+  mediaType: "movie" | "tv",
+): EnrichedFilm {
+  const directors =
+    details.credits?.crew
+      ?.filter((c) => c.job === "Director")
+      .map((c) => c.name) ?? [];
+
+  const isMovie = mediaType === "movie";
+  const movieDetails = isMovie ? (details as TmdbMovieDetails) : null;
+  const tvDetails = isMovie ? null : (details as TmdbTvDetails);
+
+  const releaseDate = isMovie
+    ? movieDetails?.release_date
+    : tvDetails?.first_air_date;
+  const year = releaseDate
+    ? parseInt(releaseDate.slice(0, 4), 10)
+    : film.year;
+
+  return {
+    ...film,
+    title: isMovie ? movieDetails!.title : tvDetails!.name,
+    year,
+    tmdbId,
+    posterPath: details.poster_path,
+    overview: details.overview ?? null,
+    genres: details.genres?.map((g) => g.name) ?? [],
+    directors,
+    runtime: isMovie
+      ? (movieDetails?.runtime ?? null)
+      : (tvDetails?.episode_run_time?.[0] ?? null),
+    popularity: details.popularity,
+    voteCount: details.vote_count,
+    voteAverage: isMovie ? movieDetails?.vote_average : undefined,
+    originalLanguage: isMovie ? movieDetails?.original_language : undefined,
+  };
+}
+
 async function enrichWithConcurrency(
   films: LetterboxdFilm[],
-  concurrency = 6,
+  concurrency = 10,
 ): Promise<EnrichedFilm[]> {
   const results: EnrichedFilm[] = new Array(films.length);
   let index = 0;
@@ -209,16 +307,40 @@ export async function searchPersonId(name: string): Promise<number | null> {
 export async function discoverMovies(options: {
   genreIds?: number[];
   personId?: number;
+  companyIds?: number[];
+  keywordIds?: number[];
+  excludeKeywordIds?: number[];
   excludeIds?: number[];
   page?: number;
   sortBy?: string;
+  /** Bias toward under-the-radar titles with real ratings. */
+  niche?: boolean;
+  /** Festival / Criterion / indie lane — strict vote & acclaim filters. */
+  artHouse?: boolean;
+  voteCountMin?: number;
+  voteCountMax?: number;
+  voteAverageMin?: number;
 }): Promise<TmdbSearchResult[]> {
+  const artHouse = options.artHouse ?? false;
   const params = new URLSearchParams({
-    sort_by: options.sortBy ?? "vote_average.desc",
-    "vote_count.gte": "200",
+    sort_by: options.sortBy ?? (artHouse ? "vote_average.desc" : "vote_average.desc"),
+    "vote_count.gte": String(
+      options.voteCountMin ??
+        (artHouse ? 40 : options.niche ? 100 : 200),
+    ),
     include_adult: "false",
     page: String(options.page ?? 1),
   });
+
+  if (artHouse) {
+    params.set("vote_average.gte", String(options.voteAverageMin ?? 7.0));
+    params.set("vote_count.lte", String(options.voteCountMax ?? 2500));
+  } else if (options.niche || options.voteCountMax) {
+    params.set(
+      "vote_count.lte",
+      String(options.voteCountMax ?? (options.niche ? 4000 : 50_000)),
+    );
+  }
 
   if (options.genreIds?.length) {
     params.set("with_genres", options.genreIds.join("|"));
@@ -228,12 +350,69 @@ export async function discoverMovies(options: {
     params.set("with_crew", String(options.personId));
   }
 
+  if (options.companyIds?.length) {
+    params.set("with_companies", options.companyIds.join("|"));
+  }
+
+  if (options.keywordIds?.length) {
+    params.set("with_keywords", options.keywordIds.join("|"));
+  }
+
+  if (options.excludeKeywordIds?.length) {
+    params.set("without_keywords", options.excludeKeywordIds.join("|"));
+  }
+
   const data = await tmdbFetch<TmdbDiscoverResult>(
     `/discover/movie?${params.toString()}`,
   );
 
   const exclude = new Set(options.excludeIds ?? []);
-  return (data?.results ?? []).filter((m) => !exclude.has(m.id));
+  let results = (data?.results ?? []).filter((m) => !exclude.has(m.id));
+
+  if (artHouse) {
+    results = results.filter(
+      (movie) =>
+        (movie.vote_average ?? 0) >= 6.8 &&
+        (movie.popularity ?? 0) <= 28 &&
+        (movie.vote_count ?? 0) <= 2800,
+    );
+    return results;
+  }
+
+  if (!options.niche) return results;
+
+  return results.filter(
+    (movie) => (movie.popularity ?? 0) <= 45 && (movie.vote_count ?? 0) <= 4500,
+  );
+}
+
+export async function discoverCriterionMovies(options: {
+  genreIds?: number[];
+  excludeIds?: number[];
+  page?: number;
+}): Promise<TmdbSearchResult[]> {
+  return discoverMovies({
+    ...options,
+    companyIds: [10932],
+    artHouse: true,
+    voteAverageMin: 6.9,
+    voteCountMax: 2200,
+  });
+}
+
+export async function discoverIndieMovies(options: {
+  genreIds?: number[];
+  excludeIds?: number[];
+  page?: number;
+}): Promise<TmdbSearchResult[]> {
+  return discoverMovies({
+    ...options,
+    keywordIds: [9672, 12565],
+    excludeKeywordIds: [9715, 9717],
+    artHouse: true,
+    voteAverageMin: 7.0,
+    voteCountMax: 2000,
+  });
 }
 
 export async function getMovieRecommendations(
@@ -269,6 +448,11 @@ export function tmdbResultToEnriched(result: TmdbSearchResult): EnrichedFilm {
     year,
     tmdbId: result.id,
     posterPath: result.poster_path,
+    overview: result.overview ?? null,
+    popularity: result.popularity,
+    voteCount: result.vote_count,
+    voteAverage: result.vote_average,
+    originalLanguage: result.original_language,
   };
 }
 

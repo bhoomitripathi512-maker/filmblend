@@ -2,11 +2,14 @@
   "functions": {
     "src/app/api/blends/[slug]/connect/route.ts": {
       "maxDuration": 60,
-      "includeFiles": "node_modules/header-generator/data_files/**"
+      "includeFiles": "src/vendor/header-generator/data_files/**"
+    },
+    "src/app/api/blends/[slug]/compute/route.ts": {
+      "maxDuration": 60,
+      "includeFiles": "src/vendor/header-generator/data_files/**"
     },
     "src/app/api/blends/[slug]/route.ts": {
-      "maxDuration": 60,
-      "includeFiles": "node_modules/header-generator/data_files/**"
+      "maxDuration": 10
     }
   }
 }

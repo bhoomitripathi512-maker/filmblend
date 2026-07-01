@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { parseJsonResponse } from "@/lib/api/fetch-json";
 
 interface ConnectLetterboxdProps {
   slot: 1 | 2;
@@ -22,6 +23,13 @@ export function ConnectLetterboxd({
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(Boolean(existingUsername));
 
+  useEffect(() => {
+    if (existingUsername) {
+      setUsername(existingUsername);
+      setSuccess(true);
+    }
+  }, [existingUsername]);
+
   async function handleConnect(e?: React.FormEvent) {
     e?.preventDefault();
     setLoading(true);
@@ -34,10 +42,9 @@ export function ConnectLetterboxd({
         body: JSON.stringify({ username, slot }),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error ?? "Failed to connect");
-      }
+      const data = await parseJsonResponse<{ ok?: boolean; error?: string }>(
+        response,
+      );
 
       setSuccess(true);
       onConnected();
@@ -54,13 +61,13 @@ export function ConnectLetterboxd({
     return (
       <div className="border border-ink bg-cream p-5">
         <p className="m-0 text-xs uppercase tracking-[0.08em] text-muted">{label}</p>
-        <p className="mt-2 text-3xl tracking-[-0.05em] text-ink">@{username}</p>
-        <p className="mt-2 text-sm text-green">Connected and synced</p>
+        <p className="mt-2 text-2xl tracking-[-0.045em] text-ink">@{username}</p>
+        <p className="mt-1.5 text-xs uppercase tracking-[0.08em] text-green">Synced</p>
         <button
           type="button"
           onClick={() => handleConnect()}
           disabled={loading}
-          className="mt-4 text-xs uppercase tracking-[0.08em] text-green underline-offset-2 hover:underline disabled:opacity-50"
+          className="btn mt-4"
         >
           {loading ? "Re-syncing…" : "Re-sync Letterboxd"}
         </button>
@@ -71,10 +78,6 @@ export function ConnectLetterboxd({
   return (
     <form onSubmit={handleConnect} className="relative z-10 border border-ink bg-paper p-5">
       <label htmlFor={inputId}>{label}</label>
-      <p className="mt-1 text-[13px] leading-[1.35] text-muted">
-        Enter your public Letterboxd username. Your watchlist and watched films
-        must be public.
-      </p>
       <div className="mt-5">
         <input
           id={inputId}
@@ -82,7 +85,7 @@ export function ConnectLetterboxd({
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           placeholder="username"
-          className="w-full border-0 border-b border-ink bg-transparent pb-2.5 pt-3 text-2xl tracking-[-0.045em] text-ink outline-none placeholder:text-soft"
+          className="w-full border-0 border-b border-ink bg-transparent pb-2.5 pt-3 text-xl tracking-[-0.04em] text-ink outline-none placeholder:text-soft"
           required
           disabled={loading}
         />

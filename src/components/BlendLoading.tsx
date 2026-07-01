@@ -26,10 +26,7 @@ export function BlendLoading({ done }: { done?: boolean }) {
   }, []);
 
   useEffect(() => {
-    if (done) {
-      setProgress(100);
-      return;
-    }
+    if (done) return;
 
     const progressTimer = window.setInterval(() => {
       setProgress((current) => {
@@ -43,15 +40,16 @@ export function BlendLoading({ done }: { done?: boolean }) {
   }, [done]);
 
   const quote = QUOTES[quoteIndex];
+  const displayProgress = done ? 100 : progress;
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center px-6 py-16">
       <div className="kicker">Now blending</div>
 
-      <div className="relative mb-10 mt-8 flex h-24 w-24 items-center justify-center">
+      <div className="relative mb-8 mt-7 flex h-20 w-20 items-center justify-center">
         <div className="pointer-events-none absolute inset-0 animate-spin rounded-full border border-ink border-t-green" />
-        <div className="relative flex h-14 w-14 flex-col items-center justify-center border border-ink bg-cream">
-          <div className="h-1.5 w-8 bg-ink" />
+        <div className="relative flex h-12 w-12 flex-col items-center justify-center border border-ink bg-cream">
+          <div className="h-1.5 w-7 bg-ink" />
           <div className="mt-1.5 flex gap-1">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green" />
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-green [animation-delay:150ms]" />
@@ -61,7 +59,7 @@ export function BlendLoading({ done }: { done?: boolean }) {
       </div>
 
       <blockquote className="max-w-md text-center">
-        <p className="text-2xl leading-[1.05] tracking-[-0.04em] text-ink">
+        <p className="text-xl leading-[1.12] tracking-[-0.035em] text-ink">
           &ldquo;{quote.text}&rdquo;
         </p>
         <footer className="mt-3 text-xs uppercase tracking-[0.08em] text-muted">
@@ -72,12 +70,12 @@ export function BlendLoading({ done }: { done?: boolean }) {
       <div className="mt-10 w-full max-w-sm">
         <div className="mb-2 flex justify-between text-xs uppercase tracking-[0.08em] text-muted">
           <span>Blending profiles</span>
-          <span>{progress}%</span>
+          <span>{displayProgress}%</span>
         </div>
         <div className="h-2 overflow-hidden border border-ink bg-paper2">
           <div
             className="h-full bg-ink transition-all duration-500 ease-out"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${displayProgress}%` }}
           />
         </div>
       </div>

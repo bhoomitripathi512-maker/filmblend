@@ -15,44 +15,42 @@ export function FilmCarousel({
   }
 
   return (
-    <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+    <div className="max-w-full min-w-0 touch-pan-x overscroll-x-contain [-webkit-overflow-scrolling:touch] flex snap-x snap-mandatory items-stretch gap-2.5 overflow-x-auto pb-2">
       {films.map((film) => {
         const poster = posterUrl(film.posterPath);
 
         return (
           <div
             key={`${film.slug}-${film.tmdbId ?? "local"}`}
-            className="w-[calc(50%-0.375rem)] shrink-0 snap-start sm:w-[calc(33.333%-0.5rem)] md:w-[calc(25%-0.5625rem)] lg:w-[calc(16.666%-0.625rem)]"
+            className="w-[132px] shrink-0 snap-start sm:w-[148px] md:w-[164px] lg:w-[176px]"
           >
-            <article className="grid h-full grid-rows-[auto_1fr] border border-ink bg-paper">
-              <div className="relative aspect-[2/3] bg-ink">
+            <article className="flex h-full flex-col overflow-hidden border border-ink bg-paper">
+              <div className="relative aspect-[2/3] w-full shrink-0 overflow-hidden bg-ink">
                 {poster ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={poster}
                     alt={film.title}
-                    className="h-full w-full object-cover [filter:saturate(0.92)]"
+                    className="absolute inset-0 h-full w-full object-cover object-center [filter:saturate(0.92)]"
                   />
                 ) : (
-                  <div className="flex h-full items-center justify-center p-3 text-center text-xs text-paper/70">
+                  <div className="absolute inset-0 flex items-center justify-center p-3 text-center text-xs text-paper/70">
                     {film.title}
                   </div>
                 )}
                 {"rating" in film && film.rating !== undefined && (
-                  <span className="absolute right-2.5 top-2.5 border border-ink bg-paper px-1.5 py-1 text-[11px] tracking-[0.05em] text-ink">
+                  <span className="absolute right-2 top-2 z-10 border border-ink bg-paper px-1.5 py-1 text-[11px] tracking-[0.05em] text-ink">
                     ★{film.rating}
                   </span>
                 )}
               </div>
-              <div className="px-3 pb-4 pt-3">
-                <h3 className="m-0 truncate text-[15px] leading-none tracking-[-0.045em] text-ink">
+              <div className="flex min-h-[4.25rem] flex-col justify-start px-2.5 pb-3 pt-2.5">
+                <h3 className="m-0 line-clamp-2 min-h-[2rem] text-[14px] leading-[1.05] tracking-[-0.04em] text-ink">
                   {film.title}
                 </h3>
-                {film.year && (
-                  <p className="mt-1.5 text-[11px] uppercase tracking-[0.06em] text-muted">
-                    {film.year}
-                  </p>
-                )}
+                <p className="mt-1.5 min-h-[1rem] text-[11px] uppercase tracking-[0.06em] text-muted">
+                  {film.year ?? ""}
+                </p>
               </div>
             </article>
           </div>

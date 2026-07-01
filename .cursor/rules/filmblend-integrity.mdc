@@ -1,0 +1,41 @@
+---
+description: Protect Filmblend core logic from accidental corruption during AI edits
+alwaysApply: true
+---
+
+# Filmblend integrity guardrails
+
+## Do not corrupt core algorithms
+
+These files define blend matching, taste scoring, and recommendations. Edit only what the task requires:
+
+- `src/lib/blend/recommendations.ts`
+- `src/lib/blend/compute.ts`
+- `src/lib/blend/taste.ts`
+- `src/lib/blend/matching.ts`
+- `src/lib/letterboxd/fetcher.ts`
+
+Before finishing a change in these files:
+
+1. Run `npm test` — all tests must pass.
+2. Do not delete helper functions unless you verify no callers remain (grep first).
+3. Do not merge unrelated refactors into a bugfix.
+4. Preserve exported test helpers (`seedPriority`, `tasteFitScore`, etc.) used by `*.test.ts`.
+
+## Security-sensitive files
+
+Treat as high-risk — validate inputs and avoid leaking secrets:
+
+- `src/lib/api/security.ts`
+- `src/middleware.ts`
+- `src/lib/supabase/server.ts`
+- `src/app/api/**`
+
+Never commit `.env*` files. Production must use `SUPABASE_SERVICE_ROLE_KEY`.
+
+## Deploy safety
+
+After changing API routes or recommendation logic:
+
+1. `npm run build` must succeed.
+2. Do not deploy without tests passing.

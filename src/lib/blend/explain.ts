@@ -9,9 +9,10 @@ interface ExplanationInput {
   seedTitles: string[];
   matchedGenres: string[];
   matchedDirectors: string[];
-  tmdbSources: Array<"recommendations" | "similar" | "discover">;
+  tmdbSources: Array<"recommendations" | "similar" | "discover" | "criterion" | "festival">;
   tasteProfile: TasteProfile;
   rank: number;
+  seedConnections?: number;
 }
 
 function formatList(items: string[], limit = 3): string {
@@ -62,19 +63,27 @@ export function buildExplanation(input: ExplanationInput): RecommendationExplana
   }
 
   if (input.seedTitles.length > 0) {
-    tmdbSignals.push(
-      `TMDB surfaced this near ${formatList(input.seedTitles)} — films that shaped your blend`,
-    );
+    const seedLine =
+      (input.seedConnections ?? 0) >= 2
+        ? `Lines up with ${formatList(input.seedTitles)} — multiple films you both love point here`
+        : `TMDB surfaced this near ${formatList(input.seedTitles)} — a film that shaped your blend`;
+    tmdbSignals.push(seedLine);
   }
 
+  if (input.tmdbSources.includes("criterion")) {
+    tmdbSignals.push("Criterion Collection / boutique distribution lane");
+  }
+  if (input.tmdbSources.includes("festival")) {
+    tmdbSignals.push("Festival-circuit title (Cannes-adjacent canon)");
+  }
   if (input.tmdbSources.includes("similar")) {
-    tmdbSignals.push("Similar titles in tone, cast, and themes");
+    tmdbSignals.push("Metadata match on director, genre, and era");
   }
   if (input.tmdbSources.includes("recommendations")) {
-    tmdbSignals.push("Community recommendations aligned with your favorites");
+    tmdbSignals.push("Adjacent pick in the same taste cluster");
   }
   if (input.tmdbSources.includes("discover")) {
-    tmdbSignals.push("Highly rated pick in a genre you both lean toward");
+    tmdbSignals.push("Critically acclaimed indie in a lane you both lean toward");
   }
 
   const topGenre = input.tasteProfile.topSharedGenre?.name;
@@ -90,13 +99,17 @@ export function buildExplanation(input: ExplanationInput): RecommendationExplana
 
   if (input.seedTitles.length > 0) {
     parts.push(
-      `TMDB links it to ${formatList(input.seedTitles)}, which anchor your overlapping taste`,
+      `It sits close to ${formatList(input.seedTitles)} on TMDB's similarity graph — the kind of deep cut that follows from what you already rate highly`,
     );
   } else {
-    parts.push("TMDB taste graphs suggest this is a strong match for your combined history");
+    parts.push(
+      "It is a lesser-known title that still fits the directors and genres you both return to",
+    );
   }
 
-  parts.push("It is not on either watchlist and neither of you has logged it as watched.");
+  parts.push(
+    "It is a festival-adjacent / art-house pick — not on either watchlist and neither of you has logged it as watched.",
+  );
 
   const headline =
     input.rank === 1 ? "You'll both love this" : `Pick #${input.rank} for you both`;

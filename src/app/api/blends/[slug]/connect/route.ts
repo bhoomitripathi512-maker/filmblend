@@ -1,4 +1,11 @@
 import { NextResponse } from "next/server";
+import {
+  applySecurityHeaders,
+  parseBlendSlug,
+  parseLetterboxdUsername,
+  parseParticipantSlot,
+  readBoundedJson,
+} from "@/lib/api/security";
 import { LetterboxdError, syncLetterboxdUser } from "@/lib/letterboxd/fetcher";
 import { createAdminClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
@@ -6,36 +13,51 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ slug: string }> },
 ) {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  const slug = parseBlendSlug(rawSlug);
+
+  if (!slug) {
+    return applySecurityHeaders(
+      NextResponse.json({ error: "Invalid blend link." }, { status: 400 }),
+    );
+  }
 
   if (!isSupabaseConfigured()) {
-    return NextResponse.json(
-      { error: "Supabase is not configured" },
-      { status: 503 },
+    return applySecurityHeaders(
+      NextResponse.json(
+        { error: "Supabase is not configured" },
+        { status: 503 },
+      ),
     );
   }
 
-  let body: { username?: string; slot?: 1 | 2 };
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  const body = await readBoundedJson<{ username?: string; slot?: unknown }>(
+    request,
+  );
+  if (!body) {
+    return applySecurityHeaders(
+      NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }),
+    );
   }
 
-  const username = body.username?.trim();
-  const slot = body.slot;
+  const username = parseLetterboxdUsername(body.username);
+  const slot = parseParticipantSlot(body.slot);
 
   if (!username) {
-    return NextResponse.json(
-      { error: "Letterboxd username is required" },
-      { status: 400 },
+    return applySecurityHeaders(
+      NextResponse.json(
+        { error: "Enter a valid Letterboxd username (letters, numbers, - and _ only)." },
+        { status: 400 },
+      ),
     );
   }
 
-  if (slot !== 1 && slot !== 2) {
-    return NextResponse.json(
-      { error: "Slot must be 1 or 2" },
-      { status: 400 },
+  if (!slot) {
+    return applySecurityHeaders(
+      NextResponse.json(
+        { error: "Slot must be 1 or 2" },
+        { status: 400 },
+      ),
     );
   }
 
@@ -47,7 +69,9 @@ export async function POST(
     .single();
 
   if (blendError || !blend) {
-    return NextResponse.json({ error: "Blend not found" }, { status: 404 });
+    return applySecurityHeaders(
+      NextResponse.json({ error: "Blend not found" }, { status: 404 }),
+    );
   }
 
   let synced;
@@ -55,12 +79,14 @@ export async function POST(
     synced = await syncLetterboxdUser(username);
   } catch (err) {
     if (err instanceof LetterboxdError) {
-      return NextResponse.json({ error: err.message }, { status: err.status });
+      return applySecurityHeaders(
+        NextResponse.json({ error: err.message }, { status: err.status }),
+      );
     }
     console.error("Letterboxd sync error:", err);
-    const message =
-      err instanceof Error ? err.message : "Failed to sync Letterboxd profile";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return applySecurityHeaders(
+      NextResponse.json({ error: "Failed to sync Letterboxd profile" }, { status: 500 }),
+    );
   }
 
   const { data: existingSlot } = await supabase
@@ -93,7 +119,9 @@ export async function POST(
     : await supabase.from("blend_participants").insert(participantRow);
 
   if (upsertError) {
-    return NextResponse.json({ error: upsertError.message }, { status: 500 });
+    return applySecurityHeaders(
+      NextResponse.json({ error: upsertError.message }, { status: 500 }),
+    );
   }
 
   const { count } = await supabase
@@ -117,21 +145,23 @@ export async function POST(
     })
     .eq("id", blend.id);
 
-  return NextResponse.json({
-    ok: true,
-    status: newStatus,
-    participant: {
-      slot,
-      letterboxdUsername: synced.username,
-      displayName: synced.displayName,
-      avatarUrl: synced.avatarUrl,
-      watchedCount: synced.filmsWatched.length,
-      watchlistCount: synced.filmsWatchlist.length,
-      ratedCount: synced.filmsRated.length,
-      syncedAt: synced.syncedAt,
-      syncMode: synced.syncMode,
-      watchlistSource:
-        "watchlistSource" in synced ? synced.watchlistSource : undefined,
-    },
-  });
+  return applySecurityHeaders(
+    NextResponse.json({
+      ok: true,
+      status: newStatus,
+      participant: {
+        slot,
+        letterboxdUsername: synced.username,
+        displayName: synced.displayName,
+        avatarUrl: synced.avatarUrl,
+        watchedCount: synced.filmsWatched.length,
+        watchlistCount: synced.filmsWatchlist.length,
+        ratedCount: synced.filmsRated.length,
+        syncedAt: synced.syncedAt,
+        syncMode: synced.syncMode,
+        watchlistSource:
+          "watchlistSource" in synced ? synced.watchlistSource : undefined,
+      },
+    }),
+  );
 }
